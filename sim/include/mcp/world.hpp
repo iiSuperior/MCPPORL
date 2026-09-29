@@ -115,7 +115,7 @@ MCP_HD double collideShapes(Axis a, const AABB& moving, const Colliders<Cap>& sh
     return distance;
 }
 
-// Direction.axisStepOrder. TODO(verify vs batch 5 source).
+// Direction.axisStepOrder
 MCP_HD inline void axisStepOrder(const Vec3& m, Axis out[3]) {
     out[0] = Axis::Y;
     if (::fabs(m.x) < ::fabs(m.z)) {

@@ -45,7 +45,7 @@ struct Vec2 {
 
     MCP_HD Vec2 scale(float s) const { return {x * s, y * s}; }
     MCP_HD float lengthSquared() const { return x * x + y * y; }
-    // TODO(verify vs Vec2 source): length/normalized.
+    // length/normalized: exercised bit-exactly by the diagonal and sneak traces.
     MCP_HD float length() const { return static_cast<float>(::sqrt(static_cast<double>(x * x + y * y))); }
     MCP_HD Vec2 normalized() const {
         float len = static_cast<float>(::sqrt(static_cast<double>(x * x + y * y)));

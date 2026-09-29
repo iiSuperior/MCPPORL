@@ -15,11 +15,12 @@
 
 namespace mcp {
 
-// Attribute defaults and modifiers. TODO(verify vs batch 5 source).
+// Attribute defaults and modifiers, as declared in 26.3 (Attributes,
+// Player.createAttributes, LivingEntity.SPEED_MODIFIER_SPRINTING).
 struct PlayerConstants {
     static constexpr double kMovementSpeedBase = static_cast<double>(0.1F);  // Player.createAttributes
     static constexpr double kSprintModifier = static_cast<double>(0.3F);    // ADD_MULTIPLIED_TOTAL
-    static constexpr double kJumpStrength = 0.42;
+    static constexpr double kJumpStrength = static_cast<double>(0.42F);
     static constexpr double kGravity = 0.08;
     static constexpr double kStepHeight = 0.6;
     static constexpr double kSneakingSpeed = 0.3;
