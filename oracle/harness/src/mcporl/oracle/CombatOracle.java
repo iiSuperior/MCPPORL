@@ -148,7 +148,10 @@ public final class CombatOracle {
         // The client acknowledges the login teleport and reports that it has loaded.
         for (Packet<?> p : side.toClient) {
             if (p instanceof ClientboundPlayerPositionPacket pos) {
-                side.toServer.add(new ServerboundAcceptTeleportationPacket(pos.id()));
+                // The login teleport is absolute and matches the spawn position.
+                Vec3 at = pos.change().position();
+                side.toServer.add(new ServerboundAcceptTeleportationPacket(pos.id(), at.x, at.y, at.z,
+                        pos.change().yRot(), pos.change().xRot()));
             }
         }
         side.toClient.clear();
