@@ -8,7 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # no fast-math, SSE2 (not x87) doubles. These apply to every target.
 add_library(mcp_strict_fp INTERFACE)
 if(MSVC)
-  target_compile_options(mcp_strict_fp INTERFACE /fp:strict)
+  # /fp:precise is value-safe and, since VS 2022, never contracts a*b+c into
+  # an FMA unless /fp:contract is given. /fp:strict adds nothing we need and
+  # blocks many optimisations. The bench_hash test verifies bit-exactness.
+  target_compile_options(mcp_strict_fp INTERFACE /fp:precise)
 else()
   target_compile_options(mcp_strict_fp INTERFACE -ffp-contract=off -fno-fast-math)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(i.86|x86)$")
@@ -31,6 +34,10 @@ if(BUILD_TESTING)
   add_executable(test_latency tests/test_latency.cpp)
   target_link_libraries(test_latency PRIVATE mcp_sim)
   add_test(NAME latency COMMAND test_latency)
+
+  add_test(NAME bench_hash
+           COMMAND ${CMAKE_COMMAND} -DBENCH=$<TARGET_FILE:bench_tick>
+             -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/bench_hash.cmake)
 
   add_executable(test_lpvec3 tests/test_lpvec3.cpp)
   target_link_libraries(test_lpvec3 PRIVATE mcp_sim)

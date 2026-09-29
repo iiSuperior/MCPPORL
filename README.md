@@ -37,11 +37,14 @@ Requires CMake 3.20+, a C++17 compiler and Java 21+ (for the parity vectors).
 
 ```sh
 cmake -S sim -B sim/build -DCMAKE_BUILD_TYPE=Release
-cmake --build sim/build
-ctest --test-dir sim/build --output-on-failure
+cmake --build sim/build --config Release
+ctest --test-dir sim/build -C Release --output-on-failure
 
 python3 -m unittest discover -s tools
 ```
+
+On Windows with Visual Studio, `--config Release` matters: Visual Studio
+generators ignore `CMAKE_BUILD_TYPE` and build Debug by default.
 
 ## Status
 

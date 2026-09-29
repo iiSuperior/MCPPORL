@@ -10,7 +10,7 @@ is an estimate to be replaced by measurements on the training machine
 | Stage | Throughput | Status |
 |---|---|---|
 | Simulator, CPU, one thread (movement only) | ~4.8 M player-ticks/s | Measured with `bench_tick`, Release build (2.1 GHz Xeon cloud core, 2026-09-29) |
-| Simulator, CPU, one thread (movement only) | 6.04 M player-ticks/s | Measured with `bench_tick` on the training desktop (2026-09-29) |
+| Simulator, CPU, one thread (movement only) | 6.04 M player-ticks/s | Measured with `bench_tick` on the training desktop, Ryzen 9 9950X3D (2026-09-29; build config and compiler flags to be re-checked, expected higher) |
 | Simulator, CPU, one thread (with combat, items, blocks) | ~0.5–1.6 M player-ticks/s | Estimate (3–10x costlier ticks) |
 | Simulator, GPU | ~50–500 M player-ticks/s | Estimate |
 | Rollout inference (~1M-parameter policy) | ~1–3 M agent-samples/s | Estimate |
@@ -24,8 +24,8 @@ lower half of the end-to-end range until measured.
 Run the benchmark:
 
 ```sh
-cmake --build sim/build --target bench_tick
-./sim/build/bench_tick sim/data/sin_table.bin 4096 2000
+cmake --build sim/build --config Release --target bench_tick
+./sim/build/bench_tick sim/data/sin_table.bin        # Windows: sim\build\Release\bench_tick.exe
 ```
 
 It ticks 4096 independent players on flat ground with random but
