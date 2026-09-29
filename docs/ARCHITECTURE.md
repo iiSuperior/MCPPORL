@@ -112,8 +112,15 @@ Verified against the 26.3 source:
 - `Player.attack` → `causeExtraKnockback` pushes the victim with direction
   `(sin(yaw), -cos(yaw))` of the **attacker's server-side yaw**, strength
   `ATTACK_KNOCKBACK/2 (+ enchantments) + 0.5 if sprint-hit at full strength`.
-  The base knockback from `hurtServer` is applied separately (source to be
-  ported with `dealDefaultKnockback`).
+  The base knockback is applied first by `dealDefaultKnockback`:
+  `knockback(0.4F, attacker.x - victim.x, attacker.z - victim.z)`. Each
+  `knockback` call halves the current horizontal velocity before subtracting
+  its push, so a sprint hit on a standing victim nets about 0.7 away when
+  facing them, and about 0.3 *toward* the attacker when facing away.
+- The victim's client receives knockback as `ClientboundSetEntityMotionPacket`
+  (compressed velocity encoding since 1.21.9); the simulator must reproduce
+  that quantisation. The attacker's client also runs `Player.attack` locally,
+  and its local result decides the attacker's x0.6 slowdown and sprint reset.
 - Client tick order (`Minecraft.tick`): `handleKeybinds` → `startAttack` sends
   `ServerboundAttackPacket` **before** `level.tickEntities` → `LocalPlayer.tick`
   → `sendPosition` sends that tick's rotation. So the server evaluates an
