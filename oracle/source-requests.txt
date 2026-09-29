@@ -2,8 +2,15 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all   (see tools/extract_methods.py)
 
-# Batch 3: verify the pieces of the client input port in OraclePlayer.
-net.minecraft.client.player.LocalPlayer distanceToUnitSquare isCrouching isSprintingPossible moveTowardsClosestSpace
-net.minecraft.world.entity.player.Player gameMode isSprintingPossible isStayingOnGroundSurface maybeBackOffFromEdge
-net.minecraft.world.entity.LivingEntity isSprintingPossible
-net.minecraft.world.entity.Entity isSprintingPossible isCrouching isVisuallyCrawling setOldPosAndRot
+# Batch 4: everything the flat-ground movement port touches.
+net.minecraft.world.entity.LivingEntity computeModifiedFriction getBlockPosBelowThatAffectsMyMovement shouldDiscardFriction omnidirectionalAirMover getBlockJumpFactor getJumpBoostPower setSprinting handleOnClimbable onClimbable createLivingAttributes
+net.minecraft.world.entity.Entity getGravity getDefaultGravity getBlockSpeedFactor getBlockJumpFactor collideBoundingBox collideWithShapes collectCandidateStepUpHeights collectColliders collectCollidersIgnoringWorldBorder checkSupportingBlock getOnPos getOnPosLegacy getBlockPosBelowThatAffectsMyMovement setSprinting isSprinting setDeltaMovement addDeltaMovement restituteMovementAfterCollisions isHorizontalCollisionMinor
+net.minecraft.world.entity.player.Player createAttributes getBlockSpeedFactor hasEnoughFoodToDoExhaustiveManoeuvres maxUpStep getDefaultGravity
+net.minecraft.world.entity.ai.attributes.AttributeInstance calculateValue getValue
+net.minecraft.world.entity.ai.attributes.RangedAttribute sanitizeValue
+net.minecraft.world.entity.ai.attributes.Attributes MOVEMENT_SPEED JUMP_STRENGTH GRAVITY FRICTION_MODIFIER AIR_DRAG_MODIFIER SNEAKING_SPEED STEP_HEIGHT :fields
+net.minecraft.world.phys.shapes.Shapes collide
+net.minecraft.world.phys.shapes.VoxelShape collide collideX
+net.minecraft.world.phys.Vec3 normalize scale add multiply horizontalDistanceSqr lengthSqr length subtract with
+net.minecraft.world.phys.AABB expandTowards move inflate
+net.minecraft.util.Mth equal square sqrt atan2 wrapDegrees
