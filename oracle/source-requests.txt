@@ -11,6 +11,5 @@ net.minecraft.world.entity.ai.attributes.AttributeInstance removeModifier addTra
 net.minecraft.client.multiplayer.ClientPacketListener handleUpdateAttributes
 net.minecraft.network.syncher.SynchedEntityData set assignValues packDirty
 net.minecraft.world.level.gamerules.GameRules :grep=NATURAL_REGENERATION|public\s.*\sset\(|public\s.*\sget\(
-net.minecraft.world.level.GameRules :grep=NATURAL_REGENERATION|public\s.*\sset\(|public\s.*\sget\(
 net.minecraft.world.item.component.AttackRange :all
 net.minecraft.world.food.FoodData tick addExhaustion

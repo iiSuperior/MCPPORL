@@ -53,7 +53,7 @@ jobs:
           mkdir -p classes out
           grep -vE '^\s*(#|$)' ../oracle/source-requests.txt | awk '{print $1}' | sort -u | while read -r cls; do
             path="${cls//./\/}"
-            unzip -q -o client.jar "$path.class" "$path\$*.class" -d classes || unzip -q -o client.jar "$path.class" -d classes
+            unzip -q -o client.jar "$path.class" "$path\$*.class" -d classes || unzip -q -o client.jar "$path.class" -d classes || echo "!! no class $cls in the jar"
           done
           java -jar vineflower.jar -e=client.jar classes out > vineflower.log 2>&1 || { tail -50 vineflower.log; exit 1; }
           find out -name '*.java' | wc -l
