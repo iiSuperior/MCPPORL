@@ -1,0 +1,115 @@
+# Downloads the official game jars on the runner (never committed: Mojang's
+# EULA forbids redistribution) and checks our assumptions against them.
+# Results go to the job log.
+name: oracle-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Minecraft version id (blank = latest release)"
+        required: false
+  push:
+    paths:
+      - "oracle/**"
+      - ".github/workflows/oracle-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Resolve version and download jars
+        env:
+          REQUESTED: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p work && cd work
+          curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o manifest.json
+          python3 - <<'EOF'
+          import json, os
+          m = json.load(open("manifest.json"))
+          v = os.environ.get("REQUESTED") or m["latest"]["release"]
+          print("latest:", m["latest"])
+          print("recent:", [x["id"] for x in m["versions"][:10]])
+          url = next(x["url"] for x in m["versions"] if x["id"] == v)
+          open("version_url", "w").write(url)
+          open("version_id", "w").write(v)
+          EOF
+          curl -fsSL "$(cat version_url)" -o version.json
+          python3 - <<'EOF'
+          import json
+          v = json.load(open("version.json"))
+          print("VERSION:", v["id"], "java:", v.get("javaVersion"))
+          print("downloads:", sorted(v["downloads"]))
+          for k in ("server", "client"):
+              d = v["downloads"][k]
+              open(f"{k}.url", "w").write(d["url"]); open(f"{k}.sha1", "w").write(d["sha1"])
+          EOF
+          for k in server client; do
+            curl -fsSL "$(cat $k.url)" -o $k.jar
+            echo "$(cat $k.sha1)  $k.jar" | sha1sum -c -
+          done
+          ls -la *.jar
+
+      - name: Unpack server bundle
+        working-directory: work
+        run: |
+          set -euo pipefail
+          mkdir -p bundle && cd bundle && unzip -q ../server.jar && cd ..
+          find bundle/META-INF -maxdepth 3 -name '*.list' -exec sh -c 'echo "== $1"; head -5 "$1"' _ {} \;
+          inner=$(find bundle/META-INF/versions -name '*.jar' | head -1)
+          echo "inner server jar: $inner"
+          cp "$inner" game.jar
+          mkdir -p libs && find bundle/META-INF/libraries -name '*.jar' -exec cp {} libs/ \;
+          echo "libraries: $(ls libs | wc -l)"
+
+      - name: Obfuscation check
+        working-directory: work
+        run: |
+          set -euo pipefail
+          for j in game.jar client.jar; do
+            total=$(unzip -Z1 $j | grep -c '\.class$' || true)
+            named=$(unzip -Z1 $j | grep -c '^net/minecraft/.*\.class$' || true)
+            echo "$j: $total classes, $named under net/minecraft/"
+          done
+          for c in net/minecraft/util/Mth net/minecraft/world/entity/LivingEntity \
+                   net/minecraft/world/entity/player/Player net/minecraft/client/player/LocalPlayer; do
+            for j in game.jar client.jar; do
+              unzip -Z1 $j | grep -qx "$c.class" && echo "FOUND $c in $j" || echo "missing $c in $j"
+            done
+          done
+
+      - name: Disassemble Mth trig and rounding
+        working-directory: work
+        run: |
+          javap -cp game.jar -c -p net.minecraft.util.Mth > mth.txt || { echo "javap failed"; exit 0; }
+          # Print the static initialiser and the sin/cos/floor/ceil bodies.
+          awk '/^  (public |private |protected )?static .* (sin|cos|floor|ceil)\(|^  static \{\};/{p=1} p{print} p&&/^$/{p=0}' mth.txt
+          grep -n "10430\|65535\|16384" mth.txt || true
+
+      - name: Check Mth against our formulas
+        working-directory: work
+        run: |
+          set -euo pipefail
+          java ../oracle/jref/JRef.java jref
+          javac -cp game.jar -d probe ../oracle/probe/MthProbe.java
+          java -cp "game.jar:libs/*:probe" MthProbe jref
+
+      - name: Movement code inventory
+        working-directory: work
+        run: |
+          for c in net.minecraft.world.entity.LivingEntity net.minecraft.world.entity.player.Player; do
+            echo "== $c"
+            javap -cp game.jar -p $c | grep -E ' (travel|aiStep|jumpFromGround|getFrictionInfluencedSpeed|handleRelativeFrictionAndCalculateMovement|knockback|causeFallDamage|hurt|attack)\(' || true
+          done
+          echo "== net.minecraft.client.player.LocalPlayer"
+          javap -cp "client.jar:game.jar" -p net.minecraft.client.player.LocalPlayer 2>&1 | grep -E ' (aiStep|tick|sendPosition|serverAiStep|applyInput|modifyInput)\(|error' || true
