@@ -2,13 +2,12 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 5: constants for the flat-ground movement port.
-net.minecraft.world.entity.ai.attributes.Attributes :grep=(MOVEMENT_SPEED|JUMP_STRENGTH|GRAVITY|FRICTION_MODIFIER|AIR_DRAG_MODIFIER|SNEAKING_SPEED|STEP_HEIGHT|SCALE|MOVEMENT_EFFICIENCY)\s*=
-net.minecraft.world.entity.LivingEntity :grep=SPEED_MODIFIER_SPRINTING\s*= getDefaultGravity maxUpStep getAirDrag getDimensions getScale
-net.minecraft.world.entity.player.Player :grep=(STANDING_DIMENSIONS|POSES)\s*= getDefaultDimensions
-net.minecraft.world.entity.Entity blockPosition makeBoundingBox getBoundingBox setPos setPosRaw getInBlockState
-net.minecraft.world.entity.EntityDimensions makeBoundingBox scalable
-net.minecraft.core.Direction axisStepOrder
-net.minecraft.world.food.FoodData hasEnoughFood
-net.minecraft.world.level.block.state.BlockBehaviour :grep=friction|speedFactor|jumpFactor
-net.minecraft.world.level.block.Block getFriction getSpeedFactor getJumpFactor
+# Batch 6: melee attack and knockback, including the facing-dependent "180 hit".
+net.minecraft.world.entity.player.Player attack causeExtraKnockback canCriticalAttack isSweepAttack getAttackStrengthScale getCurrentItemAttackStrengthDelay resetAttackStrengthTicker cannotAttack createAttackSource itemAttackInteraction damageStatsAndHearts
+net.minecraft.world.entity.LivingEntity hurtServer knockback getKnockback applyItemBlocking isDamageSourceBlocked indicateDamage
+# Order of client actions within a tick: is the attack packet sent before or after that tick's rotation?
+net.minecraft.client.Minecraft tick handleKeybinds startAttack
+net.minecraft.client.player.LocalPlayer sendPosition
+net.minecraft.client.multiplayer.MultiPlayerGameMode attack
+# How the server applies an attack packet (rotation used, reach checks).
+net.minecraft.server.network.ServerGamePacketListenerImpl handleInteract handleMovePlayer
