@@ -2,17 +2,8 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all   (see tools/extract_methods.py)
 
-# Batch 2: client input pipeline and sprint rules (ported into the harness).
-net.minecraft.client.player.LocalPlayer canStartSprinting shouldStopRunSprinting isMovingSlowly itemUseSpeedMultiplier isSlowDueToUsingItem modifyInputSpeedForSquareMovement hasEnoughImpulseToStartSprinting isShiftKeyDown isControlledCamera getMoveSimulationType isLocalClientAuthoritative
-net.minecraft.client.player.ClientInput :all
-net.minecraft.client.player.KeyboardInput :all
-net.minecraft.world.entity.player.Input :all
-# What lets an entity simulate its own movement on a given side.
-net.minecraft.world.entity.player.Player isClientAuthoritative isLocalClientAuthoritative getMoveSimulationType isEffectiveAi canSprint getFlyingSpeed isSpectator isCreative
-net.minecraft.world.entity.Entity canSimulateMovement isLocalInstanceAuthoritative isClientAuthoritative getMoveSimulationType tick baseTick setOnGroundWithMovement maxUpStep
-net.minecraft.world.entity.LivingEntity tick applyInput getEffectiveGravity getFlyingSpeed isEffectiveAi canSimulateMovement
-net.minecraft.world.entity.MoveSimulationType :all
-net.minecraft.world.entity.player.Abilities :fields
-# Server lifecycle, for booting a headless world in-process.
-net.minecraft.server.MinecraftServer :signatures
-net.minecraft.server.Main createNewWorldData loadOrCreateConfig
+# Batch 3: verify the pieces of the client input port in OraclePlayer.
+net.minecraft.client.player.LocalPlayer distanceToUnitSquare isCrouching isSprintingPossible moveTowardsClosestSpace
+net.minecraft.world.entity.player.Player gameMode isSprintingPossible isStayingOnGroundSurface maybeBackOffFromEdge
+net.minecraft.world.entity.LivingEntity isSprintingPossible
+net.minecraft.world.entity.Entity isSprintingPossible isCrouching isVisuallyCrawling setOldPosAndRot

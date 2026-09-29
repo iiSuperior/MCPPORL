@@ -1,0 +1,5 @@
+# Diagonal strafing at an angle, then the opposite diagonal.
+10 idle
+40 W D yaw=30
+40 A S
+10 idle

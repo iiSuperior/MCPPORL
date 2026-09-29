@@ -1,0 +1,4 @@
+# Sprint forward, then release everything and slide to a stop.
+10 idle
+60 W sprint
+20 idle

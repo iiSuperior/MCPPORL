@@ -1,0 +1,6 @@
+# Sprint-jump with sharp mid-air turns (strafe-style).
+10 idle
+20 W sprint jump yaw=0
+15 W sprint jump yaw=90
+15 W D sprint jump yaw=180
+20 idle

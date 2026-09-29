@@ -1,0 +1,4 @@
+# Hold sprint-jump forward (bunny hopping).
+10 idle
+80 W sprint jump
+20 idle

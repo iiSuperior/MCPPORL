@@ -1,0 +1,4 @@
+# Jump in place.
+10 idle
+30 jump
+20 idle

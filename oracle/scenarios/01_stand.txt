@@ -1,0 +1,2 @@
+# Spawn on the ground and stand still.
+40 idle

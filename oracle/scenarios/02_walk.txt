@@ -1,0 +1,4 @@
+# Walk forward, then stop.
+10 idle
+60 W
+20 idle

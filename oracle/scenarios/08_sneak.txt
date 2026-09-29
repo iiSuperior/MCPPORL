@@ -1,0 +1,5 @@
+# Sneak forward, then sneak diagonally.
+10 idle
+40 W sneak
+30 W A sneak yaw=-60
+10 idle

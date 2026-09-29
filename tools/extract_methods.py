@@ -29,9 +29,13 @@ def member_indent(lines: list[str]) -> str:
     return "   "
 
 
+TYPE_ANNOTATION = re.compile(r"@[\w.]+(?:\([^)]*\))?\s+")
+
+
 def is_decl(line: str, indent: str) -> str | None:
     if not line.startswith(indent) or line[len(indent)] == " ":
         return None
+    line = indent + TYPE_ANNOTATION.sub("", line[len(indent):])  # e.g. "public @Nullable Foo bar("
     m = DECL.match(line)
     if not m or m.group(2) in KEYWORDS or line.rstrip().endswith(";") and "(" not in line.split("=")[0]:
         return None

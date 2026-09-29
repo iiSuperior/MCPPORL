@@ -1,0 +1,76 @@
+# Runs the oracle harness against the real game on the runner and prints the
+# resulting traces (gzip + base64) to the log between BEGIN/END markers, so
+# they can be decoded and committed as golden files. Traces are our own
+# measurement data; the game jar itself is never committed.
+name: oracle-traces
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "oracle/harness/**"
+      - "oracle/scenarios/**"
+      - ".github/workflows/oracle-traces.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  traces:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Download server jar
+        run: |
+          set -euo pipefail
+          mkdir -p work && cd work
+          curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o manifest.json
+          python3 -c "import json;m=json.load(open('manifest.json'));v=m['latest']['release'];open('version_id','w').write(v);print(next(x['url'] for x in m['versions'] if x['id']==v))" > version_url
+          curl -fsSL "$(cat version_url)" -o version.json
+          read -r jar sha < <(python3 -c "import json;d=json.load(open('version.json'))['downloads']['server'];print(d['url'], d['sha1'])")
+          curl -fsSL "$jar" -o server.jar
+          echo "$sha  server.jar" | sha1sum -c -
+          mkdir -p bundle && (cd bundle && unzip -q ../server.jar)
+          cp "$(find bundle/META-INF/versions -name '*.jar' | head -1)" game.jar
+          mkdir -p libs && find bundle/META-INF/libraries -name '*.jar' -exec cp {} libs/ \;
+          echo "version: $(cat version_id)"
+
+      - name: Abstract members the harness must implement
+        working-directory: work
+        run: |
+          for c in net.minecraft.world.entity.player.Player net.minecraft.world.entity.Avatar net.minecraft.world.entity.LivingEntity; do
+            javap -cp "game.jar:libs/*" -p "$c" 2>/dev/null | grep -E "abstract|^public|^class" || true
+          done
+
+      - name: Compile harness
+        working-directory: work
+        run: |
+          javac --release 25 -Xmaxerrs 200 -cp "game.jar:libs/*" -d harness $(find ../oracle/harness/src -name '*.java')
+
+      - name: Run scenarios
+        working-directory: work
+        run: |
+          mkdir -p run && cd run
+          status=0
+          java --add-opens java.base/java.lang=ALL-UNNAMED -Dmcporl.version="$(cat ../version_id)" \
+            -cp "../game.jar:../libs/*:../harness" mcporl.oracle.OracleMain ../../oracle/scenarios ../traces \
+            > oracle.log 2>&1 || status=$?
+          grep -E "^\[oracle\]|Exception|Error|^\s+at (mcporl|net\.minecraft)" oracle.log | head -300 || true
+          if [ "$status" -ne 0 ]; then echo "--- last 80 log lines"; tail -80 oracle.log; exit "$status"; fi
+
+      - name: Print traces
+        working-directory: work
+        run: |
+          for f in traces/*.jsonl; do
+            echo "$f: $(($(wc -l < "$f") - 1)) ticks, last: $(tail -1 "$f" | cut -c1-220)"
+          done
+          echo "BEGIN-TRACES"
+          tar czf - -C traces . | base64 -w0
+          echo
+          echo "END-TRACES"
