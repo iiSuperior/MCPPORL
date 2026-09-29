@@ -67,6 +67,29 @@ Server-authoritative mechanics (damage, armor, cooldowns, totems, potion
 effects, projectiles, explosions) are recorded from the same harness running a
 real server tick.
 
+#### Two-player combat oracle (zero latency)
+
+Combat parity needs the real client/server split, so each player exists twice
+in the harness: a **client copy** (an `OraclePlayer` that owns movement, as
+`LocalPlayer` does) and a **server copy** (a player entity in the server
+level that only receives positions and runs damage and knockback). One
+harness tick follows the real order:
+
+1. Each client: deliver queued server-to-client packets (velocity from
+   knockback via the `LpVec3` round trip, applied with `lerpMotion`).
+2. Each client: `handleKeybinds` step. A scripted click runs the client-side
+   `Player.attack` (no local hurt, see above) and queues an attack packet.
+3. Each client: `LocalPlayer.tick` (movement), then `sendPosition`, which
+   queues the position/rotation packet.
+4. Server: process each client's packets in the order sent (attack first,
+   then position), so attacks use the previous tick's rotation. Then run the
+   server tick; knockback on a server copy queues a velocity packet for its
+   client and restores the server copy's motion, as `causeExtraKnockback`
+   does.
+
+Latency is added later by delaying the packet queues, using the same
+`DelayLine` model as the simulator.
+
 ### Floating-point rules (non-negotiable for bit-exactness)
 
 Java has been strict IEEE 754 since Java 17: no extended precision and no
