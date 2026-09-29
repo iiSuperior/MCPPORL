@@ -58,3 +58,8 @@ Phase 1 in progress. Target version: **26.3** (unobfuscated, Java 25).
   flat-ground golden traces **bit for bit**: standing, walking, sprinting,
   sprint-jumping, jumping, diagonal strafing, sprint-turning, sneaking and
   mid-air turns. `ctest` runs these parity checks offline.
+- The C++ melee port (`sim/include/mcp/duel.hpp`) reproduces all 13
+  two-player combat traces **bit for bit**: plain, sprint and critical hits,
+  the 180 hit, invulnerability, W-tap, moving, sprinting and airborne victims,
+  same-tick trades, partial-strength hits and the post-hit sprint echo
+  (`combat_*` tests; `duel_replay` and `bench_duel` tools).

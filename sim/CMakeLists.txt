@@ -26,8 +26,14 @@ target_link_libraries(mcp_sim INTERFACE mcp_strict_fp)
 add_executable(replay tools/replay.cpp)
 target_link_libraries(replay PRIVATE mcp_sim)
 
+add_executable(duel_replay tools/duel_replay.cpp)
+target_link_libraries(duel_replay PRIVATE mcp_sim)
+
 add_executable(bench_tick tools/bench_tick.cpp)
 target_link_libraries(bench_tick PRIVATE mcp_sim)
+
+add_executable(bench_duel tools/bench_duel.cpp)
+target_link_libraries(bench_duel PRIVATE mcp_sim)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -76,6 +82,20 @@ if(BUILD_TESTING)
                  -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -DSCENARIO=${scn}
                  -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/../oracle/traces/${name}.jsonl
                  -DOUT=${CMAKE_CURRENT_BINARY_DIR}/sim_traces/${name}.jsonl
+                 -DDIFF=${CMAKE_CURRENT_SOURCE_DIR}/../tools/tracediff.py
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity.cmake)
+    endforeach()
+
+    # Combat parity: every two-player oracle scenario, same rule.
+    file(GLOB MCP_COMBAT_SCENARIOS ${CMAKE_CURRENT_SOURCE_DIR}/../oracle/combat/*.txt)
+    foreach(scn ${MCP_COMBAT_SCENARIOS})
+      get_filename_component(name ${scn} NAME_WE)
+      add_test(NAME combat_${name}
+               COMMAND ${CMAKE_COMMAND}
+                 -DREPLAY=$<TARGET_FILE:duel_replay> -DPYTHON=${Python3_EXECUTABLE}
+                 -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -DSCENARIO=${scn}
+                 -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/../oracle/traces/combat/${name}.jsonl
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/sim_traces/combat/${name}.jsonl
                  -DDIFF=${CMAKE_CURRENT_SOURCE_DIR}/../tools/tracediff.py
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity.cmake)
     endforeach()

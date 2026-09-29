@@ -12,7 +12,8 @@ is an estimate to be replaced by measurements on the training machine
 | Simulator, CPU, one thread (movement only) | ~4.8 M player-ticks/s | Measured with `bench_tick`, Release build (2.1 GHz Xeon cloud core, 2026-09-29) |
 | Simulator, CPU, one thread (movement only) | ~6.5 M player-ticks/s | Measured with `bench_tick` on the training desktop, Ryzen 9 9950X3D at ~4.3 GHz, Ninja Release build (2026-09-29) |
 | Simulator, CPU, all 16 cores (movement only) | ~100 M player-ticks/s | Estimate (16 x single-thread) |
-| Simulator, CPU, one thread (with combat, items, blocks) | ~0.5–1.6 M player-ticks/s | Estimate (3–10x costlier ticks) |
+| Simulator, CPU, one thread (melee duels) | ~1.5 M player-ticks/s | Measured with `bench_duel` (cloud core, 2026-09-29): client and server copy per player, packets, attacks, knockback |
+| Simulator, CPU, one thread (with items, blocks) | ~0.5–1.5 M player-ticks/s | Estimate |
 | Simulator, GPU | ~50–500 M player-ticks/s | Estimate |
 | Rollout inference (~1M-parameter policy) | ~1–3 M agent-samples/s | Estimate |
 | **End to end (rollout + PPO update)** | **~150k–500k agent-samples/s** | Estimate |
@@ -99,6 +100,7 @@ weeks).
 ## To measure on the training machine
 
 - [ ] `bench_tick` on the desktop CPU (single thread, then all cores)
+- [ ] `bench_duel` on the desktop CPU
 - [ ] GPU simulator throughput at 4096 / 16384 arenas
 - [ ] Rollout-only throughput (policy forward + simulator)
 - [ ] Full PPO loop throughput

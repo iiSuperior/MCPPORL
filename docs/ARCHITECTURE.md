@@ -71,21 +71,42 @@ real server tick.
 
 Combat parity needs the real client/server split, so each player exists twice
 in the harness: a **client copy** (an `OraclePlayer` that owns movement, as
-`LocalPlayer` does) and a **server copy** (a player entity in the server
-level that only receives positions and runs damage and knockback). One
-harness tick follows the real order:
+`LocalPlayer` does) and a **server copy** (a real `ServerPlayer` on a mock
+connection). One harness tick follows the real order:
 
-1. Each client: deliver queued server-to-client packets (velocity from
-   knockback via the `LpVec3` round trip, applied with `lerpMotion`).
-2. Each client: `handleKeybinds` step. A scripted click runs the client-side
-   `Player.attack` (no local hurt, see above) and queues an attack packet.
-3. Each client: `LocalPlayer.tick` (movement), then `sendPosition`, which
-   queues the position/rotation packet.
-4. Server: process each client's packets in the order sent (attack first,
-   then position), so attacks use the previous tick's rotation. Then run the
-   server tick; knockback on a server copy queues a velocity packet for its
-   client and restores the server copy's motion, as `causeExtraKnockback`
-   does.
+1. Each client: `handleKeybinds` step. A scripted click queues an attack
+   packet and resets the client's attack strength (the client-side
+   `Player.attack` does nothing else: `hurtClient` is false).
+2. Each client: movement tick, then `sendChanges` (input, sprint command,
+   position/rotation), then `ServerboundClientTickEndPacket`.
+3. Server: each client's packets in send order (so an attack uses the
+   rotation sent on the previous tick), then one server tick.
+4. Each client: apply the server's replies (knockback velocity through the
+   `LpVec3` round trip, the echoed sprint flag and movement-speed attribute).
+
+What the server copy actually does (verified against the traces):
+
+- It runs its own **shadow physics** every tick (`AUTHORITATIVE_SIDE_AND_SERVER`
+  lets the server simulate players) with **no input**, then `tickPlayer`
+  snaps it back to the last position the client sent. Only its velocity and
+  ground state carry over, and knockback is computed from that server-side
+  velocity: a walking victim is knocked back as if standing, an airborne one
+  keeps the server's (one tick stale) vertical velocity.
+- `handlePlayerPositionChange` calls `jumpFromGround` on the copy when the
+  client leaves the ground moving up, including the sprint-jump boost. Being
+  launched by knockback counts.
+- Fall distance, used by crits, is accumulated from the client's reported
+  positions (`doCheckFallDamage`).
+- Changes to the server's sprint flag are echoed to the player's own client
+  as entity data plus the movement-speed attribute; the client applies both.
+- Server copies do not push each other. A real client is pushed locally by
+  the remote player; neither the oracle nor the simulator models that yet
+  (the simulator counts such ticks, `Duel::clientPushTicks`).
+- The oracle disables natural health regeneration: it is driven by hunger,
+  which is not in the known domain yet.
+
+The simulator mirrors this structure in `sim/include/mcp/duel.hpp`; every
+scenario in `oracle/combat/` must replay bit-identically (`combat_*` tests).
 
 Latency is added later by delaying the packet queues, using the same
 `DelayLine` model as the simulator.

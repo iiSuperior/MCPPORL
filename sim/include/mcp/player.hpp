@@ -46,7 +46,8 @@ struct Player {
     bool onGround = false;
     bool horizontalCollision = false, minorHorizontalCollision = false;
     bool verticalCollision = false, verticalCollisionBelow = false;
-    bool sprinting = false;
+    bool sprinting = false;       // shared flag 3 (Entity.isSprinting)
+    bool sprintModifier = false;  // SPEED_MODIFIER_SPRINTING present on MOVEMENT_SPEED
     bool crouching = false;
     bool hasSupportingBlock = false;
     int32_t noJumpDelay = 0;
@@ -59,10 +60,18 @@ struct Player {
         return AABB{x - w, y, z - w, x + w, y + static_cast<double>(PlayerConstants::kHeightStanding), z + w};
     }
 
+    // The flag and the modifier are separate state: the server echoes them to
+    // the client in different packets (entity data, attributes).
     MCP_HD double movementSpeedAttribute() const {
         double result = PlayerConstants::kMovementSpeedBase;
-        if (sprinting) result *= 1.0 + PlayerConstants::kSprintModifier;
+        if (sprintModifier) result *= 1.0 + PlayerConstants::kSprintModifier;
         return mth::clamp(result, 0.0, 1024.0);
+    }
+
+    // LivingEntity.setSprinting: the flag plus remove-then-add of the modifier.
+    MCP_HD void setSprinting(bool value) {
+        sprinting = value;
+        sprintModifier = value;
     }
 };
 
@@ -153,9 +162,13 @@ MCP_HD Vec3 collide(const Player& p, const World& w, const Vec3& movement) {
     return step;
 }
 
-// Entity.move(MoverType.SELF, delta) for a local, authoritative player.
+// Entity.move(MoverType.SELF or PLAYER, delta). `authoritative` is
+// isLocalInstanceAuthoritative(): true for a client's own player, false for
+// the server's copy of a client-authoritative player, which only updates its
+// ground state when it moves vertically. Both simulate movement, so both
+// apply collision restitution.
 template <typename World>
-MCP_HD void move(Player& p, const World& w, Vec3 delta) {
+MCP_HD void move(Player& p, const World& w, Vec3 delta, bool authoritative = true) {
     // Player.maybeBackOffFromEdge only changes delta when the player could fall
     // off an edge while sneaking; impossible on flat ground.
     Vec3 movement = collide(p, w, delta);
@@ -169,13 +182,16 @@ MCP_HD void move(Player& p, const World& w, Vec3 delta) {
     bool zCollision = !(::fabs(movement.z - delta.z) < static_cast<double>(1.0E-5F));
     p.horizontalCollision = xCollision || zCollision;
     bool movedVertically = ::fabs(delta.y) > 0.0;
-    // isLocalInstanceAuthoritative() is true for the local player.
-    p.verticalCollision = delta.y != movement.y;
-    p.verticalCollisionBelow = p.verticalCollision && delta.y < 0.0;
-    p.onGround = p.verticalCollisionBelow;
-    p.hasSupportingBlock = p.onGround;  // flat ground always supports
+    if (movedVertically || authoritative) {
+        p.verticalCollision = delta.y != movement.y;
+        p.verticalCollisionBelow = p.verticalCollision && delta.y < 0.0;
+        p.onGround = p.verticalCollisionBelow;
+        p.hasSupportingBlock = p.onGround;  // flat ground always supports
+    }
     if (p.horizontalCollision) {
-        p.unsupported = true;  // LocalPlayer.isHorizontalCollisionMinor not ported yet
+        // LocalPlayer.isHorizontalCollisionMinor is not ported yet; the server
+        // copy uses Entity's (always false), but walls are out of scope too.
+        p.unsupported = true;
         p.minorHorizontalCollision = false;
     } else {
         p.minorHorizontalCollision = false;
@@ -210,9 +226,9 @@ MCP_HD void tick(Player& p, const Keys& keys, float yaw, float pitch, const Worl
     bool forwardImpulse = p.moveVector.y > 1.0E-5F;
     bool movingSlowly = p.crouching;
     bool sprintPossible = true;  // food, mobility and shallow water are fine on flat land
-    if (!p.sprinting && forwardImpulse && sprintPossible && !movingSlowly && keys.sprint) p.sprinting = true;
+    if (!p.sprinting && forwardImpulse && sprintPossible && !movingSlowly && keys.sprint) p.setSprinting(true);
     if (p.sprinting && (!sprintPossible || !forwardImpulse || (p.horizontalCollision && !p.minorHorizontalCollision)))
-        p.sprinting = false;
+        p.setSprinting(false);
 
     // ---- LivingEntity.aiStep ----
     if (p.noJumpDelay > 0) p.noJumpDelay--;
