@@ -1,0 +1,11 @@
+# The 180 hit: A sprints at B, sends a 180-degree rotation, then clicks on the
+# next tick. The server evaluates the hit with the away-facing yaw, so the
+# extra knockback pulls B toward A.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=4.5 yaw=180
+20 idle | idle
+5 W sprint | idle
+1 W sprint yaw=180 | idle
+1 W sprint attack yaw=0 | idle
+20 W sprint | idle
+10 idle | idle

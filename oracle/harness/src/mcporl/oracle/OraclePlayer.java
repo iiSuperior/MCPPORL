@@ -60,6 +60,13 @@ public final class OraclePlayer extends Player {
         return GameType.SURVIVAL;
     }
 
+    // A client copy lives in the server level next to its own server twin (at the
+    // same position), which a real client never sees. Player-to-player pushing is
+    // out of scope for the oracle until it models remote-player interpolation.
+    @Override
+    protected void pushEntities() {
+    }
+
     @Override
     public boolean isShiftKeyDown() {
         return keys.shift();

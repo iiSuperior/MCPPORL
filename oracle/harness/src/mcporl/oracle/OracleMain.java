@@ -23,7 +23,7 @@ import net.minecraft.world.phys.Vec3;
  * every scenario on the server thread with an {@link OraclePlayer}, writing
  * one trace per scenario (docs/TRACE_FORMAT.md).
  *
- * Usage: OracleMain <scenario-dir> <trace-out-dir>
+ * Usage: OracleMain <scenario-dir> <trace-out-dir> [<combat-scenario-dir>]
  * Must run in a scratch directory; it writes server.properties and eula.txt.
  * Needs --add-opens java.base/java.lang=ALL-UNNAMED to find the server object.
  */
@@ -50,6 +50,7 @@ public final class OracleMain {
                 "enable-rcon=false",
                 "enable-query=false",
                 "difficulty=peaceful",
+                "max-tick-time=-1",
                 "") );
 
         net.minecraft.server.Main.main(new String[] {"--nogui"});
@@ -88,9 +89,14 @@ public final class OracleMain {
                 e.getCause().printStackTrace(System.out);
             }
         }
+        List<String> combatFailures = new ArrayList<>();
+        if (args.length > 2) {
+            CombatOracle.runAll(server, Path.of(args[2]).toAbsolutePath(), outDir, combatFailures);
+        }
+        int total = failures + combatFailures.size();
         server.halt(false);
-        System.out.println("[oracle] done, " + failures + " failures");
-        System.exit(failures == 0 ? 0 : 1);
+        System.out.println("[oracle] done, " + total + " failures");
+        System.exit(total == 0 ? 0 : 1);
     }
 
     static void run(ServerLevel level, Scenario s, Path out) throws IOException {

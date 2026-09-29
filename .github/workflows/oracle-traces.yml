@@ -10,6 +10,7 @@ on:
     paths:
       - "oracle/harness/**"
       - "oracle/scenarios/**"
+      - "oracle/combat/**"
       - ".github/workflows/oracle-traces.yml"
 
 permissions:
@@ -59,7 +60,7 @@ jobs:
           mkdir -p run && cd run
           status=0
           java --add-opens java.base/java.lang=ALL-UNNAMED -Dmcporl.version="$(cat ../version_id)" \
-            -cp "../game.jar:../libs/*:../harness" mcporl.oracle.OracleMain ../../oracle/scenarios ../traces \
+            -cp "../game.jar:../libs/*:../harness" mcporl.oracle.OracleMain ../../oracle/scenarios ../traces ../../oracle/combat \
             > oracle.log 2>&1 || status=$?
           grep -E "^\[oracle\]|Exception|Error|^\s+at (mcporl|net\.minecraft)" oracle.log | head -300 || true
           if [ "$status" -ne 0 ]; then echo "--- last 80 log lines"; tail -80 oracle.log; exit "$status"; fi
