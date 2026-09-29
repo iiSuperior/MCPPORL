@@ -48,6 +48,21 @@ public final class MthProbe {
                 }
             }
         }
+        java.lang.reflect.Field sinField = mth.getDeclaredField("SIN");
+        sinField.setAccessible(true);
+        float[] table = (float[]) sinField.get(null);
+        byte[] ours = Files.readAllBytes(Path.of(args[0], "sin_table.bin"));
+        java.nio.ByteBuffer buf = java.nio.ByteBuffer.wrap(ours);
+        int tableBad = 0;
+        if (table.length * 4 != ours.length) {
+            System.out.println("SIN table length differs: game " + table.length + ", ours " + ours.length / 4);
+            tableBad = 1;
+        } else {
+            for (float f : table) if (Float.floatToRawIntBits(f) != buf.getInt()) tableBad++;
+        }
+        System.out.printf("SIN TABLE: %d entries, %d differ%n", table.length, tableBad);
+        bad += tableBad;
+
         System.out.printf("MTH PROBE: %d vectors, %d mismatches (game vs our formulas)%n", n, bad);
         System.exit(bad == 0 ? 0 : 1);
     }

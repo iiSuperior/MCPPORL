@@ -44,6 +44,7 @@ python3 -m unittest discover -s tools
 
 ## Status
 
-Phase 0 (foundations). The math layer is verified against the JVM. The
-`Mth` formulas themselves are still unverified against the game jar until the
-oracle harness can load it.
+Phase 0 (foundations). Target version: **26.3** (unobfuscated, Java 25).
+The math layer (`sin`/`cos`, the sine table, `floor`/`ceil`, Java casts) is
+verified against both the JVM and the real 26.3 jar by the `oracle-probe`
+workflow, which downloads the game on the CI runner (jars are never committed).

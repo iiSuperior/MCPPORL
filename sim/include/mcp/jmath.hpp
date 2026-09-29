@@ -7,6 +7,7 @@
 // never use -ffast-math.
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -66,19 +67,15 @@ MCP_HD inline uint64_t dbits(double d) {
 
 namespace mcp::mth {
 
-// Ports of net.minecraft.util.Mth. Formulas below are written from knowledge
-// of recent versions and are UNVERIFIED against the target jar until the
-// oracle can load it; the oracle parity tests are what make them trustworthy.
+// Ports of net.minecraft.util.Mth, checked against the 26.3 jar by the
+// oracle-probe workflow (sin, cos, floor, ceil and the full sine table).
 
-MCP_HD inline int32_t floor(double d) {
-    int32_t i = j::d2i(d);
-    return d < static_cast<double>(i) ? i - 1 : i;
-}
-
-MCP_HD inline int32_t ceil(double d) {
-    int32_t i = j::d2i(d);
-    return d > static_cast<double>(i) ? i + 1 : i;
-}
+// Mth.floor/ceil are (int)Math.floor(x) / (int)Math.ceil(x): saturating, not
+// the "(int)x then adjust" idiom, which wraps for out-of-range inputs.
+MCP_HD inline int32_t floor(double d) { return j::d2i(::floor(d)); }
+MCP_HD inline int32_t floor(float f) { return j::d2i(::floor(static_cast<double>(f))); }
+MCP_HD inline int32_t ceil(double d) { return j::d2i(::ceil(d)); }
+MCP_HD inline int32_t ceil(float f) { return j::d2i(::ceil(static_cast<double>(f))); }
 
 MCP_HD inline float clamp(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 MCP_HD inline double clamp(double v, double lo, double hi) { return v < lo ? lo : (v > hi ? hi : v); }

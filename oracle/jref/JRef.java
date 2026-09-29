@@ -29,8 +29,8 @@ public final class JRef {
     static float sin(double rad) { return SIN[(int) ((long) (rad * RAD_TO_INDEX) & 65535L)]; }
     static float cos(double rad) { return SIN[(int) ((long) (rad * RAD_TO_INDEX + 16384.0) & 65535L)]; }
 
-    static int floor(double d) { int i = (int) d; return d < (double) i ? i - 1 : i; }
-    static int ceil(double d) { int i = (int) d; return d > (double) i ? i + 1 : i; }
+    static int floor(double d) { return (int) Math.floor(d); }
+    static int ceil(double d) { return (int) Math.ceil(d); }
 
     public static void main(String[] args) throws IOException {
         Path out = Path.of(args.length > 0 ? args[0] : ".");
