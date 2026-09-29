@@ -97,7 +97,13 @@ public final class CombatOracle {
 
     /** Runs one scenario. Must be called on the server thread; nothing else ticks meanwhile. */
     void run(CombatScenario s, Path out) throws Exception {
-        for (int dx = -8; dx <= 8; dx++) for (int dz = -8; dz <= 8; dz++) level.getChunk(dx, dz);
+        // A real client keeps every chunk around it loaded (view distance). Without
+        // tickets these chunks drop out of FULL status, and Entity.doCheckFallDamage
+        // silently skips fall tracking (touchingUnloadedChunk), which disables crits.
+        for (int dx = -8; dx <= 8; dx++) for (int dz = -8; dz <= 8; dz++) {
+            level.setChunkForced(dx, dz, true);
+            level.getChunk(dx, dz);
+        }
         Side a = spawn("A", s.a());
         Side b = spawn("B", s.b());
         try (Writer w = Files.newBufferedWriter(out)) {
@@ -128,7 +134,8 @@ public final class CombatOracle {
                 step(a, b, tick.a(), b.server.getId());
                 step(b, a, tick.b(), a.server.getId());
                 serverStep(List.of(a, b));
-                if (s.name().equals("12_crit")) diag(t, a);
+                requireLoaded(a, t);
+                requireLoaded(b, t);
                 w.write(line(t++, tick, a, b));
                 w.write('\n');
                 deliver(a);
@@ -328,20 +335,22 @@ public final class CombatOracle {
                 + "}, \"meta\": {\"scenario\": \"" + s.name() + "\", \"players\": [\"A\", \"B\"]}}";
     }
 
-    /** Temporary: why the server copy's fall distance stays at zero in 12_crit. */
-    private static void diag(int t, Side s) {
-        ServerPlayer sp = s.server;
-        Object unloaded = "?";
+    private static final Method TOUCHING_UNLOADED;
+
+    static {
         try {
-            java.lang.reflect.Method m = net.minecraft.world.entity.Entity.class.getDeclaredMethod("touchingUnloadedChunk");
-            m.setAccessible(true);
-            unloaded = m.invoke(sp);
-        } catch (ReflectiveOperationException e) {
-            unloaded = e.toString();
+            TOUCHING_UNLOADED = net.minecraft.world.entity.Entity.class.getDeclaredMethod("touchingUnloadedChunk");
+            TOUCHING_UNLOADED.setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            throw new ExceptionInInitializerError(e);
         }
-        System.out.println("[diag] t=" + t + " y=" + sp.getY() + " fd=" + sp.fallDistance + " onGround=" + sp.onGround()
-                + " unloadedChunk=" + unloaded + " inWater=" + sp.isInWater() + " chunkAtPos="
-                + sp.level().hasChunkAt(sp.blockPosition()));
+    }
+
+    /** Fall tracking (and so crits) silently stops next to unloaded chunks; never trace that state. */
+    private static void requireLoaded(Side s, int t) throws ReflectiveOperationException {
+        if ((Boolean) TOUCHING_UNLOADED.invoke(s.server)) {
+            throw new IllegalStateException(s.name + " touches an unloaded chunk at t=" + t);
+        }
     }
 
     private static String line(int t, CombatScenario.Tick tick, Side a, Side b) {
