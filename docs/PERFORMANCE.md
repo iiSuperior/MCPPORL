@@ -10,7 +10,8 @@ is an estimate to be replaced by measurements on the training machine
 | Stage | Throughput | Status |
 |---|---|---|
 | Simulator, CPU, one thread (movement only) | ~4.8 M player-ticks/s | Measured with `bench_tick`, Release build (2.1 GHz Xeon cloud core, 2026-09-29) |
-| Simulator, CPU, one thread (movement only) | 6.04 M player-ticks/s | Measured with `bench_tick` on the training desktop, Ryzen 9 9950X3D (2026-09-29; build config and compiler flags to be re-checked, expected higher) |
+| Simulator, CPU, one thread (movement only) | ~6.5 M player-ticks/s | Measured with `bench_tick` on the training desktop, Ryzen 9 9950X3D at ~4.3 GHz, Ninja Release build (2026-09-29) |
+| Simulator, CPU, all 16 cores (movement only) | ~100 M player-ticks/s | Estimate (16 x single-thread) |
 | Simulator, CPU, one thread (with combat, items, blocks) | ~0.5–1.6 M player-ticks/s | Estimate (3–10x costlier ticks) |
 | Simulator, GPU | ~50–500 M player-ticks/s | Estimate |
 | Rollout inference (~1M-parameter policy) | ~1–3 M agent-samples/s | Estimate |
@@ -20,6 +21,21 @@ The simulator is not the bottleneck; the policy network is. Plan around the
 lower half of the end-to-end range until measured.
 
 ## Simulator
+
+### Bit-exactness across machines
+
+The state hash `a17145a8224fa1e7` has been reproduced on: this Linux cloud
+container (GCC), GitHub's Ubuntu runner (GCC), GitHub's Windows runner (MSVC,
+`/fp:precise`) and the training desktop (Windows, 9950X3D). CI enforces it
+through the `bench_hash` test.
+
+### Why the CPU numbers scale weakly with clock speed
+
+The desktop is ~1.3x the cloud core, matching the real clock ratio (cloud
+Xeons turbo well above their 2.1 GHz base). The benchmark is dominated by
+unpredictable branches (random inputs) and the per-tick collision scan of
+~36 blocks, not arithmetic. A flat-world fast path would be a 5-10x win if
+the CPU path ever matters, but the GPU backend is the target.
 
 Run the benchmark:
 
