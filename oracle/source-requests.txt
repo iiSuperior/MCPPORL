@@ -2,16 +2,19 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 8: the client/server combat pipeline.
-# Client-side attack result (decides the attacker's local x0.6 slowdown and sprint reset).
-net.minecraft.world.entity.Entity hurtOrSimulate hurtClient
-net.minecraft.world.entity.LivingEntity hurtServer hurtClient :grep=invulnerableTime
-net.minecraft.client.player.LocalPlayer hurtClient
-net.minecraft.client.player.AbstractClientPlayer hurtClient
-# Knockback delivery to the victim's client: velocity packet encoding and handling.
-net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket :all
-net.minecraft.network.LpVec3 :all
-net.minecraft.client.multiplayer.ClientPacketListener handleSetEntityMotion
-# Client crosshair entity pick (for the aim-to-hit fairness rule).
-net.minecraft.client.renderer.GameRenderer :grep=(pick|Pick|HitResult)
-net.minecraft.world.phys.AABB clip distanceToSqr contains
+# Batch 9: driving real ServerPlayers from the two-player combat oracle.
+# How vanilla's own test framework creates a mock ServerPlayer with a fake connection.
+net.minecraft.gametest.framework.GameTestHelper makeMockServerPlayerInLevel makeMockPlayer
+net.minecraft.server.players.PlayerList placeNewPlayer
+# Server tick order: packets, players, entity tracking (velocity packets).
+net.minecraft.server.MinecraftServer tickServer tickChildren
+net.minecraft.server.level.ServerLevel tick tickNonPassenger
+net.minecraft.server.level.ServerPlayer tick doTick
+net.minecraft.server.network.ServerGamePacketListenerImpl tick handlePlayerCommand handlePlayerInput handlePlayerPositionChange
+net.minecraft.server.level.ServerEntity sendChanges broadcastAndSend sendDirtyEntityData
+net.minecraft.server.ServerTickRateManager :signatures
+# What the client sends each tick, and in which order.
+net.minecraft.client.player.LocalPlayer sendChanges sendIsSprintingIfNeeded
+net.minecraft.world.entity.player.Player onAttack
+net.minecraft.world.entity.Entity lerpMotion markHurt
+net.minecraft.client.multiplayer.ClientPacketListener handleSetEntityData
