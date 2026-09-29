@@ -35,6 +35,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.player.Input;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -65,6 +66,7 @@ public final class CombatOracle {
         Input lastSentInput = Input.EMPTY;
         // per-tick trace flags
         boolean gotVelocity, sentAttack;
+        int teleports;  // server position corrections applied during the scenario
 
         Side(String name, OraclePlayer client, ServerPlayer server, EmbeddedChannel channel) {
             this.name = name;
@@ -78,7 +80,7 @@ public final class CombatOracle {
             "pos.x:f64", "pos.y:f64", "pos.z:f64", "vel.x:f64", "vel.y:f64", "vel.z:f64",
             "yRot:f32", "onGround:bool", "sprinting:bool",
             "server.sprinting:bool", "server.health:f32", "server.hurtTime:i32", "server.damageCooldown:i32",
-            "gotVelocity:bool", "sentAttack:bool"};
+            "gotVelocity:bool", "sentAttack:bool", "teleports:i32"};
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -99,10 +101,26 @@ public final class CombatOracle {
         try (Writer w = Files.newBufferedWriter(out)) {
             w.write(header(s));
             w.write('\n');
-            // Let login, teleport acceptance and client load settle before tick 0.
-            for (int i = 0; i < 3; i++) serverStep(List.of(a, b));
-            deliver(a);
-            deliver(b);
+            // Login handshake. As over a real network, the client's replies arrive
+            // after at least one server tick; the first ServerGamePacketListenerImpl
+            // tick (tickPlayer -> resetPosition) initialises the anti-cheat's
+            // last-good position before the teleport acknowledgement is handled.
+            serverStep(List.of(a, b));
+            for (Side side : List.of(a, b)) {
+                deliver(side);  // applies the login teleport and queues its acknowledgement
+                side.toServer.add(new ServerboundPlayerLoadedPacket());
+            }
+            for (int i = 0; i < 2; i++) {
+                serverStep(List.of(a, b));
+                deliver(a);
+                deliver(b);
+            }
+            for (Side side : List.of(a, b)) {
+                side.teleports = 0;
+                side.xLast = side.client.getX();
+                side.yLast = side.client.getY();
+                side.zLast = side.client.getZ();
+            }
             int t = 0;
             for (CombatScenario.Tick tick : s.ticks()) {
                 step(a, b, tick.a(), b.server.getId());
@@ -115,6 +133,10 @@ public final class CombatOracle {
             }
         } finally {
             for (Side side : List.of(a, b)) {
+                if (side.teleports > 0) {
+                    System.out.println("[oracle] WARNING " + s.name() + " " + side.name + ": " + side.teleports
+                            + " server position correction(s); the client copy disagreed with the server");
+                }
                 server.getPlayerList().remove(side.server);
                 if (!side.ignoredToClient.isEmpty()) {
                     System.out.println("[oracle] " + s.name() + " " + side.name + " ignored client packets: " + side.ignoredToClient);
@@ -145,17 +167,6 @@ public final class CombatOracle {
         side.yRotLast = cp.getYRot();
         side.xRotLast = cp.getXRot();
         collect(side);
-        // The client acknowledges the login teleport and reports that it has loaded.
-        for (Packet<?> p : side.toClient) {
-            if (p instanceof ClientboundPlayerPositionPacket pos) {
-                // The login teleport is absolute and matches the spawn position.
-                Vec3 at = pos.change().position();
-                side.toServer.add(new ServerboundAcceptTeleportationPacket(pos.id(), at.x, at.y, at.z,
-                        pos.change().yRot(), pos.change().xRot()));
-            }
-        }
-        side.toClient.clear();
-        side.toServer.add(new ServerboundPlayerLoadedPacket());
         return side;
     }
 
@@ -248,6 +259,9 @@ public final class CombatOracle {
     }
 
     private static void collect(Side s) {
+        if (!s.channel.isOpen()) {
+            throw new IllegalStateException("player " + s.name + " was disconnected by the server (see log above)");
+        }
         s.channel.flushOutbound();
         Object o;
         while ((o = s.channel.readOutbound()) != null) {
@@ -264,7 +278,18 @@ public final class CombatOracle {
         s.gotVelocity = false;
         int self = s.server.getId();
         for (Packet<?> p : s.toClient) {
-            if (p instanceof ClientboundSetEntityMotionPacket m && m.id() == self) {
+            if (p instanceof ClientboundPlayerPositionPacket pos) {
+                OraclePlayer c = s.client;
+                PositionMoveRotation now = new PositionMoveRotation(c.position(), c.getDeltaMovement(), c.getYRot(), c.getXRot());
+                PositionMoveRotation to = PositionMoveRotation.calculateAbsolute(now, pos.change(), pos.relatives());
+                c.setPos(to.position());
+                c.setDeltaMovement(to.deltaMovement());
+                c.setYRot(to.yRot());
+                c.setXRot(to.xRot());
+                c.setOldPosAndRot();
+                s.toServer.add(new ServerboundAcceptTeleportationPacket(pos.id(), c.getX(), c.getY(), c.getZ(), c.getYRot(), c.getXRot()));
+                s.teleports++;
+            } else if (p instanceof ClientboundSetEntityMotionPacket m && m.id() == self) {
                 s.client.lerpMotion(wire(m.movement()));  // the client sees the LpVec3-quantised value
                 s.gotVelocity = true;
             } else if (p instanceof ClientboundSetEntityDataPacket d && d.id() == self) {
@@ -319,7 +344,8 @@ public final class CombatOracle {
                 + ", \"sprinting\": " + c.isSprinting()
                 + ", \"server.sprinting\": " + sp.isSprinting() + ", \"server.health\": " + OracleMain.hex(sp.getHealth())
                 + ", \"server.hurtTime\": " + sp.hurtTime + ", \"server.damageCooldown\": " + sp.damageCooldownTime
-                + ", \"gotVelocity\": " + s.gotVelocity + ", \"sentAttack\": " + s.sentAttack + "}";
+                + ", \"gotVelocity\": " + s.gotVelocity + ", \"sentAttack\": " + s.sentAttack
+                + ", \"teleports\": " + s.teleports + "}";
     }
 
     static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
