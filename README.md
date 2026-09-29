@@ -44,7 +44,13 @@ python3 -m unittest discover -s tools
 
 ## Status
 
-Phase 0 (foundations). Target version: **26.3** (unobfuscated, Java 25).
-The math layer (`sin`/`cos`, the sine table, `floor`/`ceil`, Java casts) is
-verified against both the JVM and the real 26.3 jar by the `oracle-probe`
-workflow, which downloads the game on the CI runner (jars are never committed).
+Phase 1 in progress. Target version: **26.3** (unobfuscated, Java 25).
+
+- The math layer (`sin`/`cos`, the sine table, `floor`/`ceil`, Java casts) is
+  verified against the JVM and the real 26.3 jar (`oracle-probe` workflow).
+- The oracle harness (`oracle/harness`) runs vanilla 26.3 on CI and records
+  golden traces (`oracle/traces`).
+- The C++ player movement port (`sim/include/mcp/player.hpp`) reproduces all
+  flat-ground golden traces **bit for bit**: standing, walking, sprinting,
+  sprint-jumping, jumping, diagonal strafing, sprint-turning, sneaking and
+  mid-air turns. `ctest` runs these parity checks offline.

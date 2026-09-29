@@ -20,6 +20,9 @@ add_library(mcp_sim INTERFACE)
 target_include_directories(mcp_sim INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(mcp_sim INTERFACE mcp_strict_fp)
 
+add_executable(replay tools/replay.cpp)
+target_link_libraries(replay PRIVATE mcp_sim)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(test_latency tests/test_latency.cpp)
@@ -38,7 +41,29 @@ if(BUILD_TESTING)
     target_link_libraries(test_jmath PRIVATE mcp_sim)
     add_test(NAME jmath COMMAND test_jmath ${JREF_OUT})
     set_tests_properties(jmath PROPERTIES FIXTURES_REQUIRED jref)
+
+    # The committed sine table must be exactly what the JVM produces.
+    add_test(NAME sin_table_matches_jvm
+             COMMAND ${CMAKE_COMMAND} -E compare_files ${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin ${JREF_OUT}/sin_table.bin)
+    set_tests_properties(sin_table_matches_jvm PROPERTIES FIXTURES_REQUIRED jref)
   else()
     message(WARNING "Java not found: skipping Java-parity math tests")
+  endif()
+
+  # Movement parity: every oracle scenario must replay bit-identically.
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    file(GLOB MCP_SCENARIOS ${CMAKE_CURRENT_SOURCE_DIR}/../oracle/scenarios/*.txt)
+    foreach(scn ${MCP_SCENARIOS})
+      get_filename_component(name ${scn} NAME_WE)
+      add_test(NAME parity_${name}
+               COMMAND ${CMAKE_COMMAND}
+                 -DREPLAY=$<TARGET_FILE:replay> -DPYTHON=${Python3_EXECUTABLE}
+                 -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -DSCENARIO=${scn}
+                 -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/../oracle/traces/${name}.jsonl
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/sim_traces/${name}.jsonl
+                 -DDIFF=${CMAKE_CURRENT_SOURCE_DIR}/../tools/tracediff.py
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity.cmake)
+    endforeach()
   endif()
 endif()

@@ -1,0 +1,11 @@
+# Replays one scenario through the simulator and diffs it against the golden trace.
+get_filename_component(out_dir ${OUT} DIRECTORY)
+file(MAKE_DIRECTORY ${out_dir})
+execute_process(COMMAND ${REPLAY} ${SIN} ${SCENARIO} ${OUT} RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "replay failed (${rc})")
+endif()
+execute_process(COMMAND ${PYTHON} ${DIFF} ${GOLDEN} ${OUT} --max 5 RESULT_VARIABLE rc)
+if(NOT rc EQUAL 0)
+  message(FATAL_ERROR "trace diverged from the vanilla oracle")
+endif()
