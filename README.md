@@ -17,6 +17,7 @@ Goals:
   of fights so the bot can learn from the ones it loses.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design and phase plan,
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the throughput budget,
 and [docs/TRACE_FORMAT.md](docs/TRACE_FORMAT.md) for the shared trace format.
 
 ## Layout

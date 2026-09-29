@@ -23,6 +23,9 @@ target_link_libraries(mcp_sim INTERFACE mcp_strict_fp)
 add_executable(replay tools/replay.cpp)
 target_link_libraries(replay PRIVATE mcp_sim)
 
+add_executable(bench_tick tools/bench_tick.cpp)
+target_link_libraries(bench_tick PRIVATE mcp_sim)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(test_latency tests/test_latency.cpp)
