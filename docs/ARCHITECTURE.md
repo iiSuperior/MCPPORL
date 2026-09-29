@@ -119,8 +119,19 @@ Verified against the 26.3 source:
   facing them, and about 0.3 *toward* the attacker when facing away.
 - The victim's client receives knockback as `ClientboundSetEntityMotionPacket`
   (compressed velocity encoding since 1.21.9); the simulator must reproduce
-  that quantisation. The attacker's client also runs `Player.attack` locally,
-  and its local result decides the attacker's x0.6 slowdown and sprint reset.
+  that quantisation (`sim/include/mcp/lpvec3.hpp`, checked against the
+  game's `LpVec3`). The client applies it with `lerpMotion`.
+- The attacker's client also runs `Player.attack` locally, but `hurtClient`
+  returns false there, so the attacker's own movement never gets the x0.6
+  slowdown or the sprint reset. Only the server's copy of the attacker stops
+  sprinting. The client reports sprint only when its own sprint state changes,
+  so the server keeps treating the attacker as not sprinting until they
+  release and re-press sprint: the mechanism behind W-tapping and sprint
+  resets. (To confirm with the oracle: whether the server's sprint flag syncs
+  back to the attacker's own client.)
+- Hit invulnerability: a full hit sets `damageCooldownTime = 20` and
+  `hurtTime = 10`. While `damageCooldownTime > 10`, a new hit only deals the
+  damage above the previous hit's and applies **no knockback**.
 - Client tick order (`Minecraft.tick`): `handleKeybinds` → `startAttack` sends
   `ServerboundAttackPacket` **before** `level.tickEntities` → `LocalPlayer.tick`
   → `sendPosition` sends that tick's rotation. So the server evaluates an
