@@ -92,6 +92,42 @@ server processes zero packets from a client and later ticks where it
 processes two or more. The policy observes the world as delayed by its own
 latency, and its actions arrive late. See `sim/include/mcp/latency.hpp`.
 
+### Tricks that depend on facing and packet order
+
+Some real PvP techniques exist only because of *when* the server sees what,
+for example the "180 hit": part of melee knockback follows the attacker's
+facing rather than their position, so turning around as the hit lands can pull
+the victim toward you. The simulator and action space must therefore model:
+
+- rotation and attack as separate actions in the same tick, in the exact order
+  the client sends them (verified from the client's tick loop, not assumed);
+- the server's view of the attacker's rotation at the moment it processes the
+  attack packet, including what latency and jitter do to that ordering.
+
+If the ordering or the knockback direction were simplified, the agent would
+either miss the technique or learn one that does not work on a real server.
+
+Verified against the 26.3 source:
+
+- `Player.attack` → `causeExtraKnockback` pushes the victim with direction
+  `(sin(yaw), -cos(yaw))` of the **attacker's server-side yaw**, strength
+  `ATTACK_KNOCKBACK/2 (+ enchantments) + 0.5 if sprint-hit at full strength`.
+  The base knockback from `hurtServer` is applied separately (source to be
+  ported with `dealDefaultKnockback`).
+- Client tick order (`Minecraft.tick`): `handleKeybinds` → `startAttack` sends
+  `ServerboundAttackPacket` **before** `level.tickEntities` → `LocalPlayer.tick`
+  → `sendPosition` sends that tick's rotation. So the server evaluates an
+  attack with the rotation from the **previous** tick's movement packet.
+- The client picks its target from the crosshair at the moment of the click,
+  but that aim is never sent. The server only checks reach
+  (`isWithinEntityInteractionRange(bounds, 3.0)`), not facing.
+- Result: face away at the end of tick N (rotation sent), flick back onto the
+  target and click in tick N+1: the hit lands and the extra knockback uses the
+  away-facing yaw, pulling the victim toward the attacker.
+- A player victim's knockback is sent to their client as a velocity packet and
+  the server restores its own copy; the victim only feels it after the
+  server-to-client delay. The latency model must delay knockback accordingly.
+
 ### Arenas
 
 Procedural arena generator plus a fixed held-out evaluation set. Block
