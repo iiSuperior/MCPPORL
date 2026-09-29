@@ -1,0 +1,72 @@
+# Decompiles selected vanilla classes on the runner and prints the requested
+# members to the job log (see oracle/source-requests.txt). Nothing decompiled
+# is committed or uploaded.
+name: vanilla-source
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Minecraft version id (blank = latest release)"
+        required: false
+  push:
+    paths:
+      - "oracle/source-requests.txt"
+      - "tools/extract_methods.py"
+      - ".github/workflows/vanilla-source.yml"
+
+permissions:
+  contents: read
+
+env:
+  VINEFLOWER: "1.12.0"
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Download client jar and decompiler
+        env:
+          REQUESTED: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p work && cd work
+          curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o manifest.json
+          url=$(python3 -c "import json,os;m=json.load(open('manifest.json'));v=os.environ.get('REQUESTED') or m['latest']['release'];print(v, file=open('version_id','w'));print(next(x['url'] for x in m['versions'] if x['id']==v))")
+          curl -fsSL "$url" -o version.json
+          read -r jar sha < <(python3 -c "import json;d=json.load(open('version.json'))['downloads']['client'];print(d['url'], d['sha1'])")
+          curl -fsSL "$jar" -o client.jar
+          echo "$sha  client.jar" | sha1sum -c -
+          curl -fsSL "https://repo.maven.apache.org/maven2/org/vineflower/vineflower/$VINEFLOWER/vineflower-$VINEFLOWER.jar" -o vineflower.jar
+          echo "version: $(cat version_id)"
+
+      - name: Decompile requested classes
+        working-directory: work
+        run: |
+          set -euo pipefail
+          mkdir -p classes out
+          grep -vE '^\s*(#|$)' ../oracle/source-requests.txt | awk '{print $1}' | sort -u | while read -r cls; do
+            path="${cls//./\/}"
+            unzip -q -o client.jar "$path.class" "$path\$*.class" -d classes || unzip -q -o client.jar "$path.class" -d classes
+          done
+          java -jar vineflower.jar -e=client.jar classes out > vineflower.log 2>&1 || { tail -50 vineflower.log; exit 1; }
+          find out -name '*.java' | wc -l
+
+      - name: Print requested members
+        working-directory: work
+        run: |
+          grep -vE '^\s*(#|$)' ../oracle/source-requests.txt | while read -r cls members; do
+            file="out/${cls//./\/}.java"
+            echo "=================== $cls :: $members"
+            if [ -f "$file" ]; then
+              python3 ../tools/extract_methods.py "$file" $members
+            else
+              echo "!! no decompiled source for $cls"
+            fi
+          done

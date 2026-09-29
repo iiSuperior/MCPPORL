@@ -1,0 +1,12 @@
+# Vanilla members to decompile and print in the vanilla-source workflow log.
+# Format: <fully.qualified.Class> <member> [<member> ...]
+# Special members: :signatures  :fields  :all   (see tools/extract_methods.py)
+
+# Client-side input handling that wraps the shared movement code.
+net.minecraft.client.player.LocalPlayer :fields aiStep applyInput modifyInput tick sendPosition
+# Shared player physics.
+net.minecraft.world.entity.player.Player :signatures aiStep travel tick
+net.minecraft.world.entity.LivingEntity aiStep travel travelInAir jumpFromGround getJumpPower handleRelativeFrictionAndCalculateMovement getFrictionInfluencedSpeed getSpeed knockback
+net.minecraft.world.entity.Entity move collide moveRelative getInputVector
+# How the dedicated server boots, for the headless harness.
+net.minecraft.server.Main main
