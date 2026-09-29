@@ -1,0 +1,8 @@
+# B sprints toward A and takes a plain (non-sprint) hit.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=4.2 yaw=180
+20 idle | idle
+4 idle | w sprint
+1 attack | w sprint
+3 idle | w sprint
+20 idle | idle

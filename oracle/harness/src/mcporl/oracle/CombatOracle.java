@@ -24,6 +24,7 @@ import net.minecraft.network.protocol.game.ClientboundBundlePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundAttackPacket;
 import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
@@ -37,7 +38,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.PositionMoveRotation;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 
@@ -82,6 +87,7 @@ public final class CombatOracle {
             "yRot:f32", "onGround:bool", "sprinting:bool",
             "server.sprinting:bool", "server.health:f32", "server.hurtTime:i32", "server.damageCooldown:i32",
             "server.onGround:bool", "server.fallDistance:f64", "server.attackStrength:f32",
+            "server.vel.x:f64", "server.vel.y:f64", "server.vel.z:f64", "server.yRot:f32", "speedAttr:f64",
             "gotVelocity:bool", "sentAttack:bool", "teleports:i32"};
 
     private final MinecraftServer server;
@@ -97,6 +103,9 @@ public final class CombatOracle {
 
     /** Runs one scenario. Must be called on the server thread; nothing else ticks meanwhile. */
     void run(CombatScenario s, Path out) throws Exception {
+        // Health regeneration depends on hunger (FoodData), which is not in the
+        // simulator's known domain yet; keep it out of the goldens.
+        level.getGameRules().set(GameRules.NATURAL_HEALTH_REGENERATION, false, server);
         // A real client keeps every chunk around it loaded (view distance). Without
         // tickets these chunks drop out of FULL status, and Entity.doCheckFallDamage
         // silently skips fall tracking (touchingUnloadedChunk), which disables crits.
@@ -308,6 +317,17 @@ public final class CombatOracle {
                 s.gotVelocity = true;
             } else if (p instanceof ClientboundSetEntityDataPacket d && d.id() == self) {
                 s.client.getEntityData().assignValues(d.packedItems());
+            } else if (p instanceof ClientboundUpdateAttributesPacket u && u.getEntityId() == self) {
+                // ClientPacketListener.handleUpdateAttributes. The server echoes the
+                // player's own attributes, e.g. the sprint speed modifier removed by
+                // a sprint hit, and the client takes them as they are.
+                for (ClientboundUpdateAttributesPacket.AttributeSnapshot snap : u.getValues()) {
+                    AttributeInstance instance = s.client.getAttributes().getInstance(snap.attribute());
+                    if (instance == null) continue;
+                    instance.setBaseValue(snap.base());
+                    instance.removeModifiers();
+                    for (AttributeModifier modifier : snap.modifiers()) instance.addTransientModifier(modifier);
+                }
             } else {
                 s.ignoredToClient.merge(p.getClass().getSimpleName(), 1, Integer::sum);
             }
@@ -378,6 +398,11 @@ public final class CombatOracle {
                 + ", \"server.hurtTime\": " + sp.hurtTime + ", \"server.damageCooldown\": " + sp.damageCooldownTime
                 + ", \"server.onGround\": " + sp.onGround() + ", \"server.fallDistance\": " + OracleMain.hex(sp.fallDistance)
                 + ", \"server.attackStrength\": " + OracleMain.hex(sp.getAttackStrengthScale(0.5F))
+                + ", \"server.vel.x\": " + OracleMain.hex(sp.getDeltaMovement().x)
+                + ", \"server.vel.y\": " + OracleMain.hex(sp.getDeltaMovement().y)
+                + ", \"server.vel.z\": " + OracleMain.hex(sp.getDeltaMovement().z)
+                + ", \"server.yRot\": " + OracleMain.hex(sp.getYRot())
+                + ", \"speedAttr\": " + OracleMain.hex(c.getAttributeValue(Attributes.MOVEMENT_SPEED))
                 + ", \"gotVelocity\": " + s.gotVelocity + ", \"sentAttack\": " + s.sentAttack
                 + ", \"teleports\": " + s.teleports + "}";
     }
