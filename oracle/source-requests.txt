@@ -2,11 +2,17 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all   (see tools/extract_methods.py)
 
-# Client-side input handling that wraps the shared movement code.
-net.minecraft.client.player.LocalPlayer :fields aiStep applyInput modifyInput tick sendPosition
-# Shared player physics.
-net.minecraft.world.entity.player.Player :signatures aiStep travel tick
-net.minecraft.world.entity.LivingEntity aiStep travel travelInAir jumpFromGround getJumpPower handleRelativeFrictionAndCalculateMovement getFrictionInfluencedSpeed getSpeed knockback
-net.minecraft.world.entity.Entity move collide moveRelative getInputVector
-# How the dedicated server boots, for the headless harness.
-net.minecraft.server.Main main
+# Batch 2: client input pipeline and sprint rules (ported into the harness).
+net.minecraft.client.player.LocalPlayer canStartSprinting shouldStopRunSprinting isMovingSlowly itemUseSpeedMultiplier isSlowDueToUsingItem modifyInputSpeedForSquareMovement hasEnoughImpulseToStartSprinting isShiftKeyDown isControlledCamera getMoveSimulationType isLocalClientAuthoritative
+net.minecraft.client.player.ClientInput :all
+net.minecraft.client.player.KeyboardInput :all
+net.minecraft.world.entity.player.Input :all
+# What lets an entity simulate its own movement on a given side.
+net.minecraft.world.entity.player.Player isClientAuthoritative isLocalClientAuthoritative getMoveSimulationType isEffectiveAi canSprint getFlyingSpeed isSpectator isCreative
+net.minecraft.world.entity.Entity canSimulateMovement isLocalInstanceAuthoritative isClientAuthoritative getMoveSimulationType tick baseTick setOnGroundWithMovement maxUpStep
+net.minecraft.world.entity.LivingEntity tick applyInput getEffectiveGravity getFlyingSpeed isEffectiveAi canSimulateMovement
+net.minecraft.world.entity.MoveSimulationType :all
+net.minecraft.world.entity.player.Abilities :fields
+# Server lifecycle, for booting a headless world in-process.
+net.minecraft.server.MinecraftServer :signatures
+net.minecraft.server.Main createNewWorldData loadOrCreateConfig
