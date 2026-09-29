@@ -2,9 +2,15 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 12: the server copy's fall distance stays 0 in oracle/combat/12_crit.
-# doCheckFallDamage is not declared in ServerPlayer, so find where it lives.
-net.minecraft.world.entity.Entity doCheckFallDamage touchingUnloadedChunk
-net.minecraft.world.entity.player.Player :grep=doCheckFallDamage|resetFallDistance|fallDistance
-net.minecraft.server.level.ServerPlayer :grep=doCheckFallDamage|resetFallDistance|fallDistance
-net.minecraft.world.entity.LivingEntity :grep=doCheckFallDamage|resetFallDistance
+# Batch 12: server-side combat details for the C++ combat port.
+net.minecraft.world.entity.LivingEntity baseTick dealDefaultKnockback actuallyHurt getDamageAfterArmorAbsorb getDamageAfterMagicAbsorb setSprinting isInvulnerableTo serverAiStep setJumping heal setHealth :grep=hurtTime|damageCooldownTime|isWithinAttackRange
+net.minecraft.world.entity.player.Player hurtServer actuallyHurt baseDamageScaleFactor isWithinAttackRange cannotAttackWithItem jumpFromGround maybeBackOffFromEdge tickRegeneration serverAiStep isInvulnerableTo getWeaponItem getAttackRange
+net.minecraft.server.level.ServerPlayer hurtServer isInvulnerableTo setLastClientInput jumpFromGround :grep=xxa|zza|jumping|spawnInvulnerable|isPvpAllowed
+net.minecraft.world.entity.Entity hurtOrSimulate setSprinting absSnapTo setSharedFlag getEyeHeight isAttackable
+net.minecraft.world.entity.ai.attributes.AttributeInstance removeModifier addTransientModifier addModifier setDirty replaceFrom
+net.minecraft.client.multiplayer.ClientPacketListener handleUpdateAttributes
+net.minecraft.network.syncher.SynchedEntityData set assignValues packDirty
+net.minecraft.world.level.gamerules.GameRules :grep=NATURAL_REGENERATION|public\s.*\sset\(|public\s.*\sget\(
+net.minecraft.world.level.GameRules :grep=NATURAL_REGENERATION|public\s.*\sset\(|public\s.*\sget\(
+net.minecraft.world.item.component.AttackRange :all
+net.minecraft.world.food.FoodData tick addExhaustion
