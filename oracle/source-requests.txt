@@ -2,12 +2,16 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 7: base knockback, the server attack handler, and the client's
-# crosshair entity pick (for the aim-to-hit fairness rule).
-net.minecraft.world.entity.LivingEntity dealDefaultKnockback getHurtDir invulnerableDuration
-net.minecraft.server.network.ServerGamePacketListenerImpl handleAttack
-net.minecraft.server.level.ServerPlayer attack isWithinEntityInteractionRange
-net.minecraft.client.renderer.GameRenderer pick pickHitResult filterHitResult
-net.minecraft.world.entity.projectile.ProjectileUtil getEntityHitResult
-net.minecraft.world.entity.Entity getViewVector calculateViewVector getEyePosition getPickRadius getEyeHeight
-net.minecraft.world.entity.player.Player entityInteractionRange isWithinEntityInteractionRange
+# Batch 8: the client/server combat pipeline.
+# Client-side attack result (decides the attacker's local x0.6 slowdown and sprint reset).
+net.minecraft.world.entity.Entity hurtOrSimulate hurtClient
+net.minecraft.world.entity.LivingEntity hurtServer hurtClient :grep=invulnerableTime
+net.minecraft.client.player.LocalPlayer hurtClient
+net.minecraft.client.player.AbstractClientPlayer hurtClient
+# Knockback delivery to the victim's client: velocity packet encoding and handling.
+net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket :all
+net.minecraft.network.LpVec3 :all
+net.minecraft.client.multiplayer.ClientPacketListener handleSetEntityMotion
+# Client crosshair entity pick (for the aim-to-hit fairness rule).
+net.minecraft.client.renderer.GameRenderer :grep=(pick|Pick|HitResult)
+net.minecraft.world.phys.AABB clip distanceToSqr contains
