@@ -27,4 +27,6 @@ jobs:
       - name: C++ tests
         run: ctest --test-dir sim/build -C Release --output-on-failure
       - name: Python tests
-        run: python -m unittest discover -s tools -v
+        run: |
+          python -m unittest discover -s tools -v
+          python -m unittest discover -s trainer/tests -t trainer -v

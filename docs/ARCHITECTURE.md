@@ -149,6 +149,27 @@ therefore in training, and again in the server plugin:
 
 All caps are configuration values.
 
+### Contract vs runtime settings
+
+Every setting belongs to one of two classes (`trainer/mcporl/config.py`):
+
+- **Contract**: what the policy was trained against. Changing it requires
+  retraining or fine-tuning. Includes the game version, enabled mechanic
+  domains, observation/action schema versions, tick rate, the fairness caps,
+  and the *training range* of every runtime knob. Stored in every checkpoint
+  and identified by a fingerprint.
+- **Runtime**: deploy-time knobs (latency, jitter, arena, difficulty delays)
+  that may change freely, but only within the ranges the contract recorded.
+
+A knob can have both halves: the latency value is runtime, the latency range
+it was trained over is contract. `check_deployable` rejects a runtime value
+outside its trained range, and reports any contract difference between a
+checkpoint and the deployment as "retrain, do not reconfigure". The server
+plugin runs the same check before loading a bot.
+
+New settings default to the contract class. A setting only moves to runtime
+once training randomises over it.
+
 ### Arenas
 
 Procedural arena generator plus a fixed held-out evaluation set. Block
