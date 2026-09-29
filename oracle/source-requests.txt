@@ -8,3 +8,6 @@ net.minecraft.server.network.ServerGamePacketListenerImpl tickPlayer resetPositi
 net.minecraft.server.network.ServerCommonPacketListenerImpl tick keepConnectionAlive
 net.minecraft.client.multiplayer.ClientPacketListener handleMovePlayer
 net.minecraft.world.entity.PositionMoveRotation calculateAbsolute
+# Confirm the tick-end packet handling and where the client sends it.
+net.minecraft.server.network.ServerGamePacketListenerImpl handleClientTickEnd
+net.minecraft.client.Minecraft :grep=ServerboundClientTickEndPacket

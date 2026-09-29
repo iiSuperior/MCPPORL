@@ -26,6 +26,7 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundAttackPacket;
+import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
@@ -190,6 +191,9 @@ public final class CombatOracle {
         c.tickCount++;
         c.tick();
         sendChanges(me);
+        // Minecraft.tick ends every client tick with this packet; the server uses it
+        // to reset per-tick bookkeeping such as receivedPositionThisTick.
+        me.toServer.add(ServerboundClientTickEndPacket.INSTANCE);
     }
 
     /** Port of LocalPlayer.sendChanges / sendPosition / sendIsSprintingIfNeeded (not a passenger). */
@@ -255,6 +259,7 @@ public final class CombatOracle {
         else if (p instanceof ServerboundPlayerInputPacket pi) c.handlePlayerInput(pi);
         else if (p instanceof ServerboundAcceptTeleportationPacket t) c.handleAcceptTeleportPacket(t);
         else if (p instanceof ServerboundPlayerLoadedPacket l) c.handleAcceptPlayerLoad(l);
+        else if (p instanceof ServerboundClientTickEndPacket e) c.handleClientTickEnd(e);
         else throw new IllegalStateException("no handler for " + p.getClass().getSimpleName());
     }
 
