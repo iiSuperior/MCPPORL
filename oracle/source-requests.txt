@@ -2,12 +2,12 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 6: melee attack and knockback, including the facing-dependent "180 hit".
-net.minecraft.world.entity.player.Player attack causeExtraKnockback canCriticalAttack isSweepAttack getAttackStrengthScale getCurrentItemAttackStrengthDelay resetAttackStrengthTicker cannotAttack createAttackSource itemAttackInteraction damageStatsAndHearts
-net.minecraft.world.entity.LivingEntity hurtServer knockback getKnockback applyItemBlocking isDamageSourceBlocked indicateDamage
-# Order of client actions within a tick: is the attack packet sent before or after that tick's rotation?
-net.minecraft.client.Minecraft tick handleKeybinds startAttack
-net.minecraft.client.player.LocalPlayer sendPosition
-net.minecraft.client.multiplayer.MultiPlayerGameMode attack
-# How the server applies an attack packet (rotation used, reach checks).
-net.minecraft.server.network.ServerGamePacketListenerImpl handleInteract handleMovePlayer
+# Batch 7: base knockback, the server attack handler, and the client's
+# crosshair entity pick (for the aim-to-hit fairness rule).
+net.minecraft.world.entity.LivingEntity dealDefaultKnockback getHurtDir invulnerableDuration
+net.minecraft.server.network.ServerGamePacketListenerImpl handleAttack
+net.minecraft.server.level.ServerPlayer attack isWithinEntityInteractionRange
+net.minecraft.client.renderer.GameRenderer pick pickHitResult filterHitResult
+net.minecraft.world.entity.projectile.ProjectileUtil getEntityHitResult
+net.minecraft.world.entity.Entity getViewVector calculateViewVector getEyePosition getPickRadius getEyeHeight
+net.minecraft.world.entity.player.Player entityInteractionRange isWithinEntityInteractionRange

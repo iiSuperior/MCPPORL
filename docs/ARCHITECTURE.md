@@ -128,6 +128,27 @@ Verified against the 26.3 source:
   the server restores its own copy; the victim only feels it after the
   server-to-client delay. The latency model must delay knockback accordingly.
 
+### Input plausibility (fairness policy)
+
+The bot may have inhuman *reaction time*, but its *inputs* must be ones a
+human could physically produce. The goal is a bot that beats you by playing
+well, not a killaura. Enforced in the simulator's action interface, and
+therefore in training, and again in the server plugin:
+
+- **Aim to hit.** An attack only counts if, at the moment of the click, the
+  bot's aim ray from its eyes hits the target's hitbox within reach, matching
+  the real client's crosshair pick. Server-legal but unaimed hits are not
+  allowed.
+- **Turn-rate cap.** The total angle the aim travels within a tick (including
+  the unsent mid-tick flick onto a target) is capped. Default: 200 degrees per
+  tick (about 4000 degrees per second, an elite human flick). This keeps the
+  "180 hit" possible while ruling out snapping away and back in one tick.
+- **Click cap.** At most one attack click per tick (20 CPS).
+- **Reaction time is unrestricted.** The bot may act on the newest
+  information it has received, but never on information still in flight.
+
+All caps are configuration values.
+
 ### Arenas
 
 Procedural arena generator plus a fixed held-out evaluation set. Block
