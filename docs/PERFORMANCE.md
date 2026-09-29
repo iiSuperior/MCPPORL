@@ -9,7 +9,8 @@ is an estimate to be replaced by measurements on the training machine
 
 | Stage | Throughput | Status |
 |---|---|---|
-| Simulator, CPU, one thread (movement only) | ~4.8 M player-ticks/s | Measured with `bench_tick`, Release build (2.1 GHz Xeon, 2026-09-29) |
+| Simulator, CPU, one thread (movement only) | ~4.8 M player-ticks/s | Measured with `bench_tick`, Release build (2.1 GHz Xeon cloud core, 2026-09-29) |
+| Simulator, CPU, one thread (movement only) | 6.04 M player-ticks/s | Measured with `bench_tick` on the training desktop (2026-09-29) |
 | Simulator, CPU, one thread (with combat, items, blocks) | ~0.5–1.6 M player-ticks/s | Estimate (3–10x costlier ticks) |
 | Simulator, GPU | ~50–500 M player-ticks/s | Estimate |
 | Rollout inference (~1M-parameter policy) | ~1–3 M agent-samples/s | Estimate |
@@ -29,7 +30,10 @@ cmake --build sim/build --target bench_tick
 
 It ticks 4096 independent players on flat ground with random but
 reproducible inputs (forward, strafe, sprint, occasional jumps, random yaw)
-on one thread.
+on one thread, then prints a 64-bit hash of every player's exact state bits.
+With the default arguments the hash must be **`a17145a8224fa1e7`** on every
+machine and compiler; a different hash means the simulation is not
+bit-identical there (for example, fused multiply-add was enabled).
 
 ### GPU notes
 

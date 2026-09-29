@@ -48,9 +48,22 @@ int main(int argc, char** argv) {
         }
     }
     double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    double checksum = 0.0;
-    for (const auto& p : ps) checksum += p.x + p.z;
-    std::printf("%.2f M player-ticks/s on one thread (%d players x %d ticks, %.2f s, checksum %.6g)\n",
-                players * double(ticks) / dt / 1e6, players, ticks, dt, checksum);
+    // FNV-1a over the exact bits of every player's state: identical hashes on
+    // two machines mean the simulations agreed bit for bit.
+    uint64_t hash = 1469598103934665603ULL;
+    auto mix = [&hash](uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            hash ^= (v >> (8 * i)) & 0xFF;
+            hash *= 1099511628211ULL;
+        }
+    };
+    for (const auto& p : ps) {
+        mix(j::dbits(p.x)); mix(j::dbits(p.y)); mix(j::dbits(p.z));
+        mix(j::dbits(p.vel.x)); mix(j::dbits(p.vel.y)); mix(j::dbits(p.vel.z));
+        mix(j::fbits(p.yRot)); mix(p.onGround); mix(p.sprinting);
+    }
+    std::printf("%.2f M player-ticks/s on one thread (%d players x %d ticks, %.2f s)\n",
+                players * double(ticks) / dt / 1e6, players, ticks, dt);
+    std::printf("state hash: %016llx\n", static_cast<unsigned long long>(hash));
     return 0;
 }
