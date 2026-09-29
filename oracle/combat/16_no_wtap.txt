@@ -1,0 +1,10 @@
+# Control for 15_wtap: the same two sprint hits, but sprint is held throughout
+# with no W-tap. If sprint resets matter, the second hit is not a sprint hit.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=4.0 yaw=180
+20 idle | idle
+4 W sprint | idle
+1 W sprint attack | idle
+17 W sprint | idle
+1 W sprint attack | idle
+20 W sprint | idle

@@ -81,6 +81,7 @@ public final class CombatOracle {
             "pos.x:f64", "pos.y:f64", "pos.z:f64", "vel.x:f64", "vel.y:f64", "vel.z:f64",
             "yRot:f32", "onGround:bool", "sprinting:bool",
             "server.sprinting:bool", "server.health:f32", "server.hurtTime:i32", "server.damageCooldown:i32",
+            "server.onGround:bool", "server.fallDistance:f64", "server.attackStrength:f32",
             "gotVelocity:bool", "sentAttack:bool", "teleports:i32"};
 
     private final MinecraftServer server;
@@ -349,6 +350,8 @@ public final class CombatOracle {
                 + ", \"sprinting\": " + c.isSprinting()
                 + ", \"server.sprinting\": " + sp.isSprinting() + ", \"server.health\": " + OracleMain.hex(sp.getHealth())
                 + ", \"server.hurtTime\": " + sp.hurtTime + ", \"server.damageCooldown\": " + sp.damageCooldownTime
+                + ", \"server.onGround\": " + sp.onGround() + ", \"server.fallDistance\": " + OracleMain.hex(sp.fallDistance)
+                + ", \"server.attackStrength\": " + OracleMain.hex(sp.getAttackStrengthScale(0.5F))
                 + ", \"gotVelocity\": " + s.gotVelocity + ", \"sentAttack\": " + s.sentAttack
                 + ", \"teleports\": " + s.teleports + "}";
     }

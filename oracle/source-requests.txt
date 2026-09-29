@@ -2,12 +2,9 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 10: server-side connection bookkeeping for mock players, and how the
-# client applies a server teleport (position correction).
-net.minecraft.server.network.ServerGamePacketListenerImpl tickPlayer resetPosition handleAcceptTeleportPacket handleAcceptPlayerLoad updateAwaitingTeleport teleport hasClientLoaded :grep=receivedPositionThisTick|firstGood|knownMovePacketCount
-net.minecraft.server.network.ServerCommonPacketListenerImpl tick keepConnectionAlive
-net.minecraft.client.multiplayer.ClientPacketListener handleMovePlayer
-net.minecraft.world.entity.PositionMoveRotation calculateAbsolute
-# Confirm the tick-end packet handling and where the client sends it.
-net.minecraft.server.network.ServerGamePacketListenerImpl handleClientTickEnd
-net.minecraft.client.Minecraft :grep=ServerboundClientTickEndPacket
+# Batch 11: why the jump crit in oracle/combat/12_crit did not crit.
+# Server-side fall tracking for a client-authoritative player.
+net.minecraft.world.entity.Entity checkFallDamage resetFallDistance :grep=fallDistance\s*=|fallDistance\s*[-+]=
+net.minecraft.server.level.ServerPlayer doCheckFallDamage trackStartFallingPosition checkFallDamage
+net.minecraft.world.entity.LivingEntity checkFallDamage
+net.minecraft.world.entity.player.Player jumpFromGround getKnockback
