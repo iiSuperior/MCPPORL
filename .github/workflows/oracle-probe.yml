@@ -11,7 +11,8 @@ on:
         required: false
   push:
     paths:
-      - "oracle/**"
+      - "oracle/probe/**"
+      - "oracle/jref/**"
       - ".github/workflows/oracle-probe.yml"
 
 permissions:

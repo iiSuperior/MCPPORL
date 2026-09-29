@@ -1,6 +1,7 @@
 package mcporl.oracle;
 
 import com.mojang.authlib.GameProfile;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Input;
@@ -55,7 +56,7 @@ public final class OraclePlayer extends Player {
     }
 
     @Override
-    protected GameType gameMode() {
+    public GameType gameMode() {
         return GameType.SURVIVAL;
     }
 
@@ -88,6 +89,9 @@ public final class OraclePlayer extends Player {
                 && canPlayerFitWithinBlocksAndEntitiesWhen(Pose.CROUCHING)
                 && (isShiftKeyDown() || !isSleeping() && !canPlayerFitWithinBlocksAndEntitiesWhen(Pose.STANDING));
 
+        // LocalPlayer.moveTowardsClosestSpace is not ported: it only acts while the
+        // player's corners are inside suffocating blocks, which Phase 1 arenas avoid.
+
         // KeyboardInput.tick
         keys = pendingKeys;
         float forward = impulse(keys.forward(), keys.backward());
@@ -106,6 +110,13 @@ public final class OraclePlayer extends Player {
             }
         }
         super.aiStep();
+    }
+
+    // Port of LocalPlayer.isSprintingPossible (private there).
+    private boolean isSprintingPossible(boolean allowedInShallowWater) {
+        return !isMobilityRestricted()
+                && hasEnoughFoodToDoExhaustiveManoeuvres()
+                && (allowedInShallowWater || !isInShallowWater());
     }
 
     private boolean canStartSprinting() {
@@ -153,14 +164,11 @@ public final class OraclePlayer extends Player {
         return direction.scale(modifiedLength);
     }
 
-    // TODO(verify): LocalPlayer.distanceToUnitSquare was not in the decompiled
-    // batch yet; this is the expected geometry (distance from the origin to the
-    // unit square along a unit direction) and is checked by the source workflow.
     private static float distanceToUnitSquare(Vec2 direction) {
         float x = Math.abs(direction.x);
         float y = Math.abs(direction.y);
-        float ratio = y > x ? x / y : y / x;
-        return (float) Math.sqrt(1.0F + ratio * ratio);
+        float tan = y > x ? x / y : y / x;
+        return Mth.sqrt(1.0F + Mth.square(tan));
     }
 
     private static float impulse(boolean positive, boolean negative) {
