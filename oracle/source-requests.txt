@@ -2,9 +2,9 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 11: why the jump crit in oracle/combat/12_crit did not crit.
-# Server-side fall tracking for a client-authoritative player.
-net.minecraft.world.entity.Entity checkFallDamage resetFallDistance :grep=fallDistance\s*=|fallDistance\s*[-+]=
-net.minecraft.server.level.ServerPlayer doCheckFallDamage trackStartFallingPosition checkFallDamage
-net.minecraft.world.entity.LivingEntity checkFallDamage
-net.minecraft.world.entity.player.Player jumpFromGround getKnockback
+# Batch 12: the server copy's fall distance stays 0 in oracle/combat/12_crit.
+# doCheckFallDamage is not declared in ServerPlayer, so find where it lives.
+net.minecraft.world.entity.Entity doCheckFallDamage touchingUnloadedChunk
+net.minecraft.world.entity.player.Player :grep=doCheckFallDamage|resetFallDistance|fallDistance
+net.minecraft.server.level.ServerPlayer :grep=doCheckFallDamage|resetFallDistance|fallDistance
+net.minecraft.world.entity.LivingEntity :grep=doCheckFallDamage|resetFallDistance

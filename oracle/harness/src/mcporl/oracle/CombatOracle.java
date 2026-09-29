@@ -128,6 +128,7 @@ public final class CombatOracle {
                 step(a, b, tick.a(), b.server.getId());
                 step(b, a, tick.b(), a.server.getId());
                 serverStep(List.of(a, b));
+                if (s.name().equals("12_crit")) diag(t, a);
                 w.write(line(t++, tick, a, b));
                 w.write('\n');
                 deliver(a);
@@ -325,6 +326,22 @@ public final class CombatOracle {
                 + System.getProperty("mcporl.version", "unknown")
                 + "\", \"source\": \"oracle\", \"domains\": [\"movement\", \"melee\"], \"fields\": {" + f
                 + "}, \"meta\": {\"scenario\": \"" + s.name() + "\", \"players\": [\"A\", \"B\"]}}";
+    }
+
+    /** Temporary: why the server copy's fall distance stays at zero in 12_crit. */
+    private static void diag(int t, Side s) {
+        ServerPlayer sp = s.server;
+        Object unloaded = "?";
+        try {
+            java.lang.reflect.Method m = net.minecraft.world.entity.Entity.class.getDeclaredMethod("touchingUnloadedChunk");
+            m.setAccessible(true);
+            unloaded = m.invoke(sp);
+        } catch (ReflectiveOperationException e) {
+            unloaded = e.toString();
+        }
+        System.out.println("[diag] t=" + t + " y=" + sp.getY() + " fd=" + sp.fallDistance + " onGround=" + sp.onGround()
+                + " unloadedChunk=" + unloaded + " inWater=" + sp.isInWater() + " chunkAtPos="
+                + sp.level().hasChunkAt(sp.blockPosition()));
     }
 
     private static String line(int t, CombatScenario.Tick tick, Side a, Side b) {
