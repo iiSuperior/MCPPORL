@@ -8,6 +8,7 @@ overloads), including its annotations and body. Special names:
   :fields     all field declarations at class-body level
   :signatures one line per method/constructor declaration
   :all        the whole file
+  :grep=RE    every line matching the regex RE, plus its statement continuation
 """
 from __future__ import annotations
 
@@ -73,6 +74,16 @@ def main(argv: list[str]) -> int:
     if ":all" in names:
         print("\n".join(lines))
         return 0
+
+    for n in names:
+        if n.startswith(":grep="):
+            pattern = re.compile(n[len(":grep="):])
+            for i, line in enumerate(lines):
+                if pattern.search(line):
+                    j = i
+                    while j < len(lines) - 1 and not lines[j].rstrip().endswith((";", "{", "}")):
+                        j += 1
+                    print("\n".join(lines[i:j + 1]))
 
     found: dict[str, int] = {n: 0 for n in names if not n.startswith(":")}
     for i, line in enumerate(lines):
