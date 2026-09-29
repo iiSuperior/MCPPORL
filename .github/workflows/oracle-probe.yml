@@ -105,6 +105,17 @@ jobs:
           javac -cp game.jar -d probe ../oracle/probe/MthProbe.java
           java -cp "game.jar:libs/*:probe" MthProbe jref
 
+      - name: LpVec3 golden vectors
+        working-directory: work
+        run: |
+          set -euo pipefail
+          javac -cp "game.jar:libs/*" -d probe ../oracle/probe/LpVec3Probe.java
+          java -cp "game.jar:libs/*:probe" LpVec3Probe lpvec3_golden.txt
+          echo "BEGIN-LPVEC3"
+          gzip -9c lpvec3_golden.txt | base64 -w0
+          echo
+          echo "END-LPVEC3"
+
       - name: Movement code inventory
         working-directory: work
         run: |
