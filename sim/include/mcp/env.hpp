@@ -6,7 +6,8 @@
 // duels restart at once with a fresh random start (auto-reset); the
 // observation returned for them is the new episode's first.
 //
-// Observations only use what the player's client knows: its own state, and
+// Observations only use what the player's client knows: its own state (and
+// where the arena's edge is, as walls would show), and
 // the opponent as its client sees it (the interpolated remote player, see
 // tracker.hpp), plus what a human can see of the opponent (its held item and
 // its hurt flash). The opponent's health is not visible and not observed.
@@ -43,7 +44,7 @@ struct EnvConfig {
 // jump, sprint, click (0 or 1, a tap), then the turn this tick in degrees
 // (yaw, pitch; the fairness cap still applies).
 constexpr int32_t kActionSize = 7;
-constexpr int32_t kObsSize = 31;
+constexpr int32_t kObsSize = 34;
 // Per finished episode: winner (-1 draw), ticks, truncated, then per slot the counters
 // of EpisodeStats::Slot, in order.
 constexpr int32_t kSlotStats = 9;
@@ -207,6 +208,12 @@ struct BatchEnv {
         o[n++] = static_cast<float>(attackDamageAttribute(op.server.weapon)) / 10.0F;
         o[n++] = attackStrengthDelay(op.server.weapon) / 25.0F;
         o[n++] = static_cast<float>(ticks[i]) / static_cast<float>(cfg.maxTicks);
+        // Where the arena is: the direction to its centre in the player's
+        // frame, and how far the nearest edge is (a wall a human can see).
+        double R = cfg.arenaRadius;
+        o[n++] = fwd(-c.x, -c.z) / static_cast<float>(R);
+        o[n++] = side(-c.x, -c.z) / static_cast<float>(R);
+        o[n++] = static_cast<float>((R - std::fmax(std::fabs(c.x), std::fabs(c.z))) / R);
     }
 
     void observeAll(float* obs) const {
