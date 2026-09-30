@@ -153,8 +153,8 @@ struct BatchEnv {
         float face = static_cast<float>(std::atan2(-(b.x - a.x), b.z - a.z) * 57.29577951308232);
         a.yaw = std::round(face + static_cast<float>((uniform() - 0.5) * 60.0));
         b.yaw = std::round(duel::wrapDegrees(face + 180.0F) + static_cast<float>((uniform() - 0.5) * 60.0));
-        a.weapon = drawWeapon();
-        b.weapon = cfg.sameWeapon ? a.weapon : drawWeapon();
+        a.hotbar[0] = drawWeapon();
+        b.hotbar[0] = cfg.sameWeapon ? a.hotbar[0] : drawWeapon();
         duels[i].reset(a, b, world, rng.next());
         rewards[i].reset(duels[i]);
         ticks[i] = 0;
@@ -191,7 +191,7 @@ struct BatchEnv {
         // Which way the opponent (as seen) faces, relative to the line towards me.
         float theirYawToMe = static_cast<float>(std::atan2(-(c.x - v.pos.x), c.z - v.pos.z) * 57.29577951308232);
         float facing = env::rad(duel::wrapDegrees(v.yRot - theirYawToMe));
-        float delay = attackStrengthDelay(me.server.weapon);
+        float delay = attackStrengthDelay(me.server.attrWeapon);
         float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
         int32_t n = 0;
         o[n++] = me.server.health / 20.0F;
@@ -220,10 +220,10 @@ struct BatchEnv {
         o[n++] = (pitchTo - c.xRot) / 90.0F;
         o[n++] = static_cast<float>(me.server.hurtTime) / 10.0F;  // own hurt flash
         o[n++] = static_cast<float>(op.server.hurtTime) / 10.0F;  // the opponent's, visible on it
-        o[n++] = static_cast<float>(attackDamageAttribute(me.server.weapon)) / 10.0F;
+        o[n++] = static_cast<float>(attackDamageAttribute(me.server.attrWeapon)) / 10.0F;
         o[n++] = delay / 25.0F;
-        o[n++] = static_cast<float>(attackDamageAttribute(op.server.weapon)) / 10.0F;
-        o[n++] = attackStrengthDelay(op.server.weapon) / 25.0F;
+        o[n++] = static_cast<float>(attackDamageAttribute(op.server.mainHand())) / 10.0F;
+        o[n++] = attackStrengthDelay(op.server.mainHand()) / 25.0F;
         o[n++] = static_cast<float>(ticks[i]) / static_cast<float>(cfg.maxTicks);
         // Where the arena is: the direction to its centre in the player's
         // frame, and how far the nearest edge is (a wall a human can see).
@@ -380,7 +380,7 @@ struct BatchEnv {
         reach::ReachState r = reachOf(d, k);
         a[0] = r.mine > 2.6 ? 1.0F : 0.0F;
         a[3] = r.mine > 3.5 ? 1.0F : 0.0F;
-        float delay = attackStrengthDelay(me.server.weapon);
+        float delay = attackStrengthDelay(me.server.attrWeapon);
         float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
         a[4] = (r.canHit() && strength >= 1.0F && m < 6.0F) ? 1.0F : 0.0F;
     }
@@ -453,7 +453,7 @@ struct BatchEnv {
         // Melee (BotCombat: full attack strength, own 10-tick gap, crits).
         Vec3 eye = env::eyeOf(c);
         bool inReach = reach::inRange(reach::eyeToBox(eye, box));
-        float delay = attackStrengthDelay(me.server.weapon);
+        float delay = attackStrengthDelay(me.server.attrWeapon);
         float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
         if (inReach && T.attackCooldown <= 0 && strength >= 1.0F) {
             bool swing = false;
@@ -499,10 +499,23 @@ struct BatchEnv {
         char buf[256];
         for (int32_t k = 0; k < 2; ++k) {
             const DuelStart& s = recordedStarts[2 * i + k];
-            std::snprintf(buf, sizeof buf, "start %s x=%.17g z=%.17g yaw=%.9g health=%.9g%s%s\n", k == 0 ? "A" : "B", s.x, s.z,
-                          static_cast<double>(s.yaw), static_cast<double>(s.health), s.weapon == Weapon::Hand ? "" : " item=",
-                          mcp::stats(s.weapon).name);
+            std::snprintf(buf, sizeof buf, "start %s x=%.17g z=%.17g yaw=%.9g health=%.9g", k == 0 ? "A" : "B", s.x, s.z,
+                          static_cast<double>(s.yaw), static_cast<double>(s.health));
             out += buf;
+            int32_t last = 0;  // the last non-empty hotbar slot
+            for (int32_t h = 0; h < 9; ++h)
+                if (s.hotbar[h] != Weapon::Hand) last = h;
+            if (last == 0) {
+                if (s.hotbar[0] != Weapon::Hand) (out += " item=") += mcp::stats(s.hotbar[0]).name;
+            } else {
+                out += " hotbar=";
+                for (int32_t h = 0; h <= last; ++h) {
+                    if (h > 0) out += ",";
+                    out += s.hotbar[h] == Weapon::Hand ? "-" : mcp::stats(s.hotbar[h]).name;
+                }
+            }
+            if (s.offhand != Weapon::Hand) (out += " offhand=") += mcp::stats(s.offhand).name;
+            out += "\n";
         }
         const auto& ra = recorded[2 * i];
         const auto& rb = recorded[2 * i + 1];
@@ -520,6 +533,8 @@ struct BatchEnv {
                 if (in.attack && in.attackHeld) out += " attack";
                 else if (in.attack) out += " tap";
                 else if (in.attackHeld) out += " hold";
+                if (in.slot >= 0) out += " slot=" + std::to_string(in.slot);
+                if (in.use) out += " use";
                 std::snprintf(buf, sizeof buf, " yaw=%.9g pitch=%.9g", static_cast<double>(in.yaw), static_cast<double>(in.pitch));
                 out += buf;
             }

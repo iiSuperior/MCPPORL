@@ -3,7 +3,7 @@
 # A's packets are handled first and B's head yaw is still last tick's, so the
 # hit is blocked. The next hit, with B's back turned, lands.
 start A item=diamond_sword
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 8  idle | use
 1  tap  | use yaw=0

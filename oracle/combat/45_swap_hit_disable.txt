@@ -3,7 +3,7 @@
 # attack uses the sword's attributes. Then the reverse swap-hit on the lowered
 # shield: the axe's attributes (7.0) with the attack strength after the reset.
 start A hotbar=netherite_sword,wooden_axe
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 8  idle | use
 1  slot=1 tap | use

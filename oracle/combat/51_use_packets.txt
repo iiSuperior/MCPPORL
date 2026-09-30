@@ -3,7 +3,7 @@
 # shield while looking at the ground (use on block first). Neither changes the
 # fight: A's click lands, B's shield blocks the second one.
 start A item=golden_sword
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 9  use | use pitch=70
 1  tap | use pitch=0

@@ -2,7 +2,7 @@
 //   LocalPlayer.aiStep/applyInput/modifyInput (client input handling)
 //   Player.aiStep/travel, LivingEntity.aiStep/travel/travelInAir/jumpFromGround,
 //   Entity.move/collide/moveRelative/getInputVector.
-// Scope (Phase 1): on land, survival, no effects, no items in use, no fluids,
+// Scope (Phase 1): on land, survival, no effects, no fluids,
 // no climbables, no entities to collide with. Out-of-scope states set
 // Player::unsupported rather than silently diverging.
 #pragma once
@@ -54,6 +54,10 @@ struct Player {
     int32_t noJumpDelay = 0;
     Keys keys{};
     Vec2 moveVector{};
+    // LocalPlayer.isUsingItem for an item with the default UseEffects (a raised
+    // shield): input x0.2 and no sprint start (isSlowDueToUsingItem). Set by the
+    // duel's client model; the server copy never reads it.
+    bool usingItem = false;
     bool unsupported = false;  // entered a state this port does not cover
 
     MCP_HD AABB boundingBox() const {
@@ -230,7 +234,8 @@ MCP_HD void tick(Player& p, const Keys& keys, float yaw, float pitch, const Worl
     bool forwardImpulse = p.moveVector.y > 1.0E-5F;
     bool movingSlowly = p.crouching;
     bool sprintPossible = true;  // food, mobility and shallow water are fine on flat land
-    if (!p.sprinting && forwardImpulse && sprintPossible && !movingSlowly && keys.sprint) p.setSprinting(true);
+    if (!p.sprinting && forwardImpulse && sprintPossible && !p.usingItem && !movingSlowly && keys.sprint)
+        p.setSprinting(true);
     if (p.sprinting && (!sprintPossible || !forwardImpulse || (p.horizontalCollision && !p.minorHorizontalCollision)))
         p.setSprinting(false);
 
@@ -250,6 +255,7 @@ MCP_HD void tick(Player& p, const Keys& keys, float yaw, float pitch, const Worl
         Vec2 in = p.moveVector;
         if (in.lengthSquared() != 0.0F) {
             in = in.scale(0.98F);
+            if (p.usingItem) in = in.scale(0.2F);  // itemUseSpeedMultiplier (UseEffects.DEFAULT)
             if (movingSlowly) in = in.scale(static_cast<float>(C::kSneakingSpeed));
             in = detail::modifyInputSpeedForSquareMovement(in);
         }

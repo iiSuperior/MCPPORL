@@ -2,7 +2,7 @@
 # to the axe, hits the raised shield a few ticks later (weak, but the disable does
 # not depend on strength), swaps back and hits with the sword at full strength.
 start A hotbar=netherite_sword,wooden_axe
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 8  idle | use
 1  slot=1 | use

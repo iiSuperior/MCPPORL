@@ -3,7 +3,7 @@
 # every 4 ticks (rightClickDelay) and the server refuses while the cooldown runs.
 # A's next full-strength hit lands; the shield comes back up after the cooldown.
 start A item=diamond_axe
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 10 idle | use
 1  tap  | use

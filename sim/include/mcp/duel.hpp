@@ -14,7 +14,14 @@
 // Each client sees the other player through the entity tracker and the
 // client-side interpolation of tracker.hpp, and aims at that view.
 //
-// Scope: bare hands, swords and axes (weapons.hpp), no armor or effects, no shields, no totems, no fall
+// Hotbar switching and shields: ServerGamePacketListenerImpl.handleSetCarriedItem /
+// handleUseItem / handlePlayerAction(RELEASE_USE_ITEM), LivingEntity.startUsingItem /
+// stopUsingItem / updatingUsingItem / getItemBlockingWith / applyItemBlocking,
+// Player.blockUsingItem, BlocksAttacks, ItemCooldowns; client side
+// Minecraft.handleKeybinds / startUseItem, MultiPlayerGameMode.useItem /
+// releaseUsingItem / ensureHasSentCarriedItem, LocalPlayer.onSyncedDataUpdated.
+//
+// Scope: bare hands, swords, axes and shields (weapons.hpp), no armor or effects, no totems, no fall
 // damage, no sneaking, full-cube flat arenas, no health regeneration (the
 // oracle disables it). Leaving that scope sets
 // `unsupported` instead of silently diverging. A death ends the episode: the
@@ -59,6 +66,19 @@ struct DuelInput {
     // scenarios): a click lands whenever the opponent's true hitbox is within
     // entity reach, without the crosshair pick. See env.hpp, expert panel.
     bool rangeHit = false;
+    // slot: a hotbar key pressed this tick (0-8), or -1. use: the use key is
+    // down when the tick samples it (a press on the first such tick).
+    int32_t slot = -1;
+    bool use = false;
+};
+
+// Serverbound packets sent from Minecraft.handleKeybinds, in send order (the
+// movement packets of sendChanges follow them).
+enum class ActionKind : uint8_t { Carried, Attack, Punch, Interact, UseItemOn, UseItem, Release };
+struct ActionPacket {
+    ActionKind kind = ActionKind::Punch;
+    int8_t arg = 0;  // Carried: the slot; Interact / UseItemOn / UseItem: 1 for the off hand
+    float yRot = 0.0F, xRot = 0.0F;  // UseItem: the rotation it carries
 };
 
 // ServerboundMovePlayerPacket (Pos, PosRot, Rot, StatusOnly).
@@ -73,6 +93,8 @@ struct MovePacket {
 // attack (handleKeybinds), then sendChanges (input, sprint command, move),
 // then ServerboundClientTickEndPacket.
 struct ClientPackets {
+    ActionPacket actions[16];
+    int32_t actionCount = 0;
     bool attack = false;
     int32_t punches = 0;      // ServerboundPunchPacket (startAttack, and continueAttack on a block)
     int32_t blockActions = 0; // ServerboundPlayerActionPacket START/ABORT_DESTROY_BLOCK (no combat effect)
@@ -93,12 +115,28 @@ struct ServerCopy {
     int32_t hurtTime = 0;
     int32_t damageCooldownTime = 0;
     int32_t attackStrengthTicker = 0;
-    // Main-hand item. A changed item resets the attack strength at the next
-    // Player.tick (lastItemInMainHand); durability used is tracked so a
-    // broken weapon is flagged instead of silently kept.
-    Weapon weapon = Weapon::Hand;
-    bool weaponChanged = false;
-    int32_t weaponDamage = 0;
+    // Inventory: the hotbar with the selected slot (the main hand) and the off
+    // hand, with the durability used of each item (a broken item is flagged
+    // instead of silently kept).
+    Weapon hotbar[9] = {};
+    int32_t hotbarDamage[9] = {};
+    int32_t selected = 0;
+    Weapon offhand = Weapon::Hand;
+    int32_t offhandDamage = 0;
+    // The item whose attribute modifiers are applied (detectEquipmentUpdates,
+    // in the server tick: an attack handled before it uses the old item's), and
+    // Player.lastItemInMainHand (a different item resets the attack strength).
+    Weapon attrWeapon = Weapon::Hand;
+    Weapon lastMainHand = Weapon::Hand;
+    // Using an item (a shield): the living-entity flags (bit 1 using, bit 2 off
+    // hand; the flags are the use state, LivingEntity.isUsingItem), the item and
+    // useItemRemaining.
+    bool flagUsing = false, flagOffhand = false, flagsDirty = false;
+    Weapon useItem = Weapon::Hand;
+    int32_t useItemRemaining = 0;
+    // ItemCooldowns, shield group: ticks left and the duration it was set with.
+    int32_t shieldCooldown = 0, shieldCooldownDuration = 0;
+    float yHeadRot = 0.0F;  // set to yRot at the end of Player.aiStep
     bool syncVelocity = false;
     // ServerPlayer.die -> markClientUnloadedAfterDeath: hasClientLoaded() turns
     // false, so the dead player's later packets are ignored and it takes no damage.
@@ -122,15 +160,70 @@ struct ServerCopy {
         body.setSprinting(value);
     }
 
+    MCP_HD Weapon mainHand() const { return hotbar[selected]; }
+    MCP_HD Weapon inHand(bool off) const { return off ? offhand : mainHand(); }
+    MCP_HD int32_t& damageOf(bool off) { return off ? offhandDamage : hotbarDamage[selected]; }
+
+    // LivingEntity.setLivingEntityFlag: synched data, dirty only on a change.
+    MCP_HD void setFlags(bool usingFlag, bool offFlag) {
+        if (flagUsing != usingFlag || flagOffhand != offFlag) {
+            flagsDirty = true;
+            dataDirty = true;
+        }
+        flagUsing = usingFlag;
+        flagOffhand = offFlag;
+    }
+
+    // LivingEntity.startUsingItem (server): only a BLOCKS_ATTACKS item is used in scope.
+    MCP_HD void startUsingItem(bool off) {
+        Weapon item = inHand(off);
+        if (item == Weapon::Hand || flagUsing) return;
+        useItem = item;
+        useItemRemaining = ShieldStats::kUseDuration;
+        setFlags(true, off);
+    }
+
+    // LivingEntity.stopUsingItem (server): clears bit 1 only.
+    MCP_HD void stopUsingItem() {
+        setFlags(false, flagOffhand);
+        useItem = Weapon::Hand;
+        useItemRemaining = 0;
+    }
+
+    // LivingEntity.getItemBlockingWith != null (BlocksAttacks.blockDelayTicks = round(0.25 * 20)).
+    MCP_HD bool blocking() const {
+        if (!flagUsing || !stats(useItem).blocksAttacks) return false;
+        int32_t delay = static_cast<int32_t>(::floorf(ShieldStats::kBlockDelaySeconds * 20.0F + 0.5F));  // Math.round(float)
+        return ShieldStats::kUseDuration - useItemRemaining >= delay;
+    }
+
+    // LivingEntity.getTicksUsingItem
+    MCP_HD int32_t ticksUsingItem() const {
+        return flagUsing ? (stats(useItem).blocksAttacks ? ShieldStats::kUseDuration : 0) - useItemRemaining : 0;
+    }
+
+    // ItemCooldowns.getCooldownPercent(shield, 0)
+    MCP_HD float shieldCooldownPercent() const {
+        if (shieldCooldown <= 0) return 0.0F;
+        return mth::clamp(static_cast<float>(shieldCooldown) / static_cast<float>(shieldCooldownDuration), 0.0F, 1.0F);
+    }
+
     // Player.getAttackStrengthScale
     MCP_HD float attackStrengthScale(float a) const {
-        float delay = attackStrengthDelay(weapon);
+        float delay = attackStrengthDelay(attrWeapon);
         return mth::clamp((static_cast<float>(attackStrengthTicker) + a) / delay, 0.0F, 1.0F);
     }
 };
 
 // What the server sends back to one player's client during one step, in order.
 struct ServerReplies {
+    // ClientboundCooldownPacket (the shield's group)
+    bool cooldown = false;
+    int32_t cooldownTicks = 0;
+    // The living-entity flags in ClientboundSetEntityDataPacket: this player's own
+    // (LocalPlayer.onSyncedDataUpdated) and the other player's (its RemotePlayer).
+    bool useFlags = false, flagUsing = false, flagOffhand = false;
+    bool viewFlags = false, viewUsing = false;
     bool motion = false;
     Vec3 motionVelocity{};  // ClientboundSetEntityMotionPacket payload before LpVec3 encoding
     bool sprintFlag = false, sprintFlagValue = false;          // ClientboundSetEntityDataPacket
@@ -157,6 +250,17 @@ struct DuelPlayer {
     int64_t destroyStartTick = -1, tickCount = 0;
     Vec3 pickFrom{};  // eye position of the last pick
     bool lastAttackHeld = false;  // the attack key state sampled last tick
+    // Hotbar selection (Inventory.selected) and the slot last sent to the server
+    // (MultiPlayerGameMode.carriedIndex); Minecraft.rightClickDelay; the use key last tick.
+    int32_t selected = 0, carriedIndex = 0, rightClickDelay = 0;
+    bool lastUseDown = false;
+    // LocalPlayer's own use state (startedUsingItem, usingItemHand, the item).
+    bool usingItem = false, useOffhand = false;
+    Weapon useItem = Weapon::Hand;
+    int32_t useItemRemaining = 0;
+    // The client's ItemCooldowns (shield group), fed by ClientboundCooldownPacket.
+    int32_t cooldown = 0, cooldownDuration = 0;
+    bool viewUsing = false;  // the other player's use flag as this client sees it
     ServerCopy server;
     EntityTracker tracker;  // the server's tracker for this player (ServerEntity)
     ClientSendState send;
@@ -225,6 +329,76 @@ MCP_HD inline void startDestroyBlock(DuelPlayer& me, const HitResult& h) {
     me.destroyStartTick = me.tickCount;
 }
 
+MCP_HD inline void pushAction(ClientPackets& out, ActionKind kind, int32_t arg = 0, float yRot = 0.0F, float xRot = 0.0F) {
+    if (out.actionCount >= 16) return;  // cannot happen: at most ~10 per tick
+    out.actions[out.actionCount++] = ActionPacket{kind, static_cast<int8_t>(arg), yRot, xRot};
+}
+
+// The client's copy of its items is the server's: nothing but death changes them in scope.
+MCP_HD inline Weapon clientInHand(const DuelPlayer& me, bool off) {
+    return off ? me.server.offhand : me.server.hotbar[me.selected];
+}
+
+// MultiPlayerGameMode.ensureHasSentCarriedItem
+MCP_HD inline void ensureHasSentCarriedItem(DuelPlayer& me) {
+    if (me.selected != me.carriedIndex) {
+        me.carriedIndex = me.selected;
+        pushAction(me.packets, ActionKind::Carried, me.selected);
+    }
+}
+
+// LocalPlayer.startUsingItem / stopUsingItem (the client's prediction)
+MCP_HD inline void clientStartUsingItem(DuelPlayer& me, bool off) {
+    Weapon item = clientInHand(me, off);
+    if (item == Weapon::Hand || me.usingItem) return;
+    me.usingItem = true;
+    me.useOffhand = off;
+    me.useItem = item;
+    me.useItemRemaining = ShieldStats::kUseDuration;
+}
+
+MCP_HD inline void clientStopUsingItem(DuelPlayer& me) {
+    me.usingItem = false;
+    me.useItem = Weapon::Hand;
+    me.useItemRemaining = 0;
+}
+
+// Minecraft.startUseItem. Per hand: the entity or block under the crosshair is
+// interacted with first (no sword, axe or shield interaction does anything to a
+// player, grass or a barrier, so those packets change nothing), then the item is
+// used: MultiPlayerGameMode.useItem always sends the packet; a shield off
+// cooldown is raised (CONSUME, which ends the loop), anything else passes.
+MCP_HD inline void startUseItem(DuelPlayer& me, const DuelInput& in) {
+    if (me.isDestroying) return;  // gameMode.isDestroying()
+    me.rightClickDelay = 4;
+    for (int32_t hand = 0; hand < 2; ++hand) {
+        bool off = hand == 1;
+        if (me.pick.type == HitType::Entity) {
+            // isWithinEntityInteractionRange(entity, 0.0) holds for any entity pick
+            ensureHasSentCarriedItem(me);
+            pushAction(me.packets, ActionKind::Interact, hand);
+        } else if (me.pick.type == HitType::Block) {
+            ensureHasSentCarriedItem(me);
+            pushAction(me.packets, ActionKind::UseItemOn, hand);
+        }
+        Weapon item = clientInHand(me, off);
+        if (item == Weapon::Hand) continue;
+        ensureHasSentCarriedItem(me);
+        pushAction(me.packets, ActionKind::UseItem, hand, in.yaw, in.pitch);
+        if (stats(item).blocksAttacks && !(me.cooldown > 0)) {  // Item.use -> startUsingItem, CONSUME
+            clientStartUsingItem(me, off);
+            return;
+        }
+    }
+}
+
+// MultiPlayerGameMode.releaseUsingItem
+MCP_HD inline void releaseUsingItem(DuelPlayer& me) {
+    ensureHasSentCarriedItem(me);
+    pushAction(me.packets, ActionKind::Release);
+    clientStopUsingItem(me);  // LivingEntity.releaseUsingItem: a shield's releaseUsing does nothing
+}
+
 // One client tick (Minecraft.tick): pick, keybinds (click), movement,
 // sendChanges. `target` is the opponent's box as this client last heard it.
 template <typename World>
@@ -254,34 +428,55 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
     me.pickFrom = Vec3{pick::lerp(1.0, cp.xo, cp.x), pick::lerp(1.0, cp.yo, cp.y) + static_cast<double>(view.eyeHeight),
                        pick::lerp(1.0, cp.zo, cp.z)};
     me.tickCount++;
-    // handleKeybinds: startAttack for the click, then continueAttack(key down).
-    if (in.attack && me.missTime <= 0) {
-        switch (me.pick.type) {
-            case HitType::Entity:  // MultiPlayerGameMode.attack
-                out.attack = true;
-                me.clientAttackStrengthTicker = 0;
-                me.sentAttack = true;
-                break;
-            case HitType::Block:
-                startDestroyBlock(me, me.pick);
-                break;
-            case HitType::Miss:
-                me.missTime = 10;  // survival has miss time
-                me.clientAttackStrengthTicker = 0;
-                break;
+    // Minecraft.tick: rightClickDelay--, gameMode.tick (sends a hotbar change made
+    // last tick), then handleKeybinds.
+    if (me.rightClickDelay > 0) me.rightClickDelay--;
+    ensureHasSentCarriedItem(me);
+    // handleKeybinds: hotbar keys; then, unless an item is in use (which eats the
+    // clicks and releases the item once the use key is up), startAttack for the
+    // click and startUseItem for a use press; a held use key retries every
+    // rightClickDelay; then continueAttack(key down).
+    if (in.slot >= 0 && in.slot < 9) me.selected = in.slot;
+    bool usePressed = in.use && !me.lastUseDown;
+    me.lastUseDown = in.use;
+    if (me.usingItem) {
+        if (!in.use) releaseUsingItem(me);
+    } else {
+        if (in.attack && me.missTime <= 0) {
+            switch (me.pick.type) {
+                case HitType::Entity:  // MultiPlayerGameMode.attack
+                    ensureHasSentCarriedItem(me);
+                    pushAction(out, ActionKind::Attack);
+                    out.attack = true;
+                    me.clientAttackStrengthTicker = 0;
+                    me.sentAttack = true;
+                    break;
+                case HitType::Block:  // startDestroyBlock does not send the carried slot
+                    startDestroyBlock(me, me.pick);
+                    break;
+                case HitType::Miss:
+                    me.missTime = 10;  // survival has miss time
+                    me.clientAttackStrengthTicker = 0;
+                    break;
+            }
+            pushAction(out, ActionKind::Punch);
+            out.punches++;
         }
-        out.punches++;
+        if (usePressed) startUseItem(me, in);
     }
+    if (in.use && me.rightClickDelay == 0 && !me.usingItem) startUseItem(me, in);
     // continueAttack
     if (!in.attackHeld) me.missTime = 0;
-    if (me.missTime <= 0) {
+    if (me.missTime <= 0 && !me.usingItem) {
         if (in.attackHeld && me.pick.type == HitType::Block) {
+            ensureHasSentCarriedItem(me);  // continueDestroyBlock
             if (me.isDestroying && sameBlock(me, me.pick)) {
                 // continueDestroyBlock: mining progress beyond the tick it started is not ported
                 if (me.destroyStartTick != me.tickCount) cp.unsupported = true;
             } else {
                 startDestroyBlock(me, me.pick);
             }
+            pushAction(out, ActionKind::Punch);
             out.punches++;
         } else if (me.isDestroying) {  // stopDestroyBlock
             out.blockActions++;
@@ -291,8 +486,16 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
     }
     if (me.missTime > 0) me.missTime--;
     me.lastAttackHeld = in.attackHeld;
+    // LivingEntity.tick before the movement: updatingUsingItem stops a use whose
+    // item left the hand (a main-hand item swapped away), else counts it down.
+    if (me.usingItem) {
+        if (clientInHand(me, me.useOffhand) == me.useItem) me.useItemRemaining--;
+        else clientStopUsingItem(me);
+    }
+    me.client.usingItem = me.usingItem;
     tick(me.client, in.keys, in.yaw, in.pitch, w, sinTab);
     me.clientAttackStrengthTicker++;
+    if (me.cooldown > 0) me.cooldown--;  // Player.tick -> cooldowns.tick()
 
     // LocalPlayer.sendChanges -> sendPosition / sendIsSprintingIfNeeded
     Player& c = me.client;
@@ -359,6 +562,15 @@ MCP_HD inline void deliver(DuelPlayer& me) {
         me.client.vel = lpvec3::roundTrip(r.motionVelocity);  // Entity.lerpMotion
         me.gotVelocity = true;
     }
+    if (r.cooldown) {  // ClientPacketListener.handleItemCooldown
+        me.cooldown = r.cooldownTicks;
+        me.cooldownDuration = r.cooldownTicks;
+    }
+    if (r.useFlags) {  // LocalPlayer.onSyncedDataUpdated: follow the server's use state
+        if (r.flagUsing && !me.usingItem) clientStartUsingItem(me, r.flagOffhand);
+        else if (!r.flagUsing && me.usingItem) clientStopUsingItem(me);
+    }
+    if (r.viewFlags) me.viewUsing = r.viewUsing;
     if (r.sprintFlag) me.client.sprinting = r.sprintFlagValue;  // assignValues: the flag only
     if (r.speedAttribute) me.client.sprintModifier = r.speedModifierValue;
     r = ServerReplies{};
@@ -447,10 +659,59 @@ MCP_HD inline void knockback(ServerCopy& victim, double power, double xd, double
     victim.body.vel = Vec3{m.x / 2.0 - dv.x, vy, m.z / 2.0 - dv.z};
 }
 
+// LivingEntity.applyItemBlocking for a melee hit (the source position is the
+// attacker's), with Player.blockUsingItem's disable. Returns the damage blocked.
+MCP_HD inline float applyItemBlocking(ServerCopy& victim, const ServerCopy& attacker, float damage,
+                                      ServerReplies& victimReplies, const float* sinTab) {
+    if (damage <= 0.0F || !victim.blocking()) return 0.0F;
+    // angle = acos(horizontal direction to the source . calculateViewVector(0, yHeadRot))
+    Vec3 to = Vec3{attacker.body.x - victim.body.x, 0.0, attacker.body.z - victim.body.z}.normalize();
+    float realYRot = -victim.yHeadRot * static_cast<float>(3.141592653589793 / 180.0);
+    float ySin = mth::sin(sinTab, static_cast<double>(realYRot)), yCos = mth::cos(sinTab, static_cast<double>(realYRot));
+    float xCos = mth::cos(sinTab, 0.0), xSin = mth::sin(sinTab, 0.0);
+    Vec3 view{static_cast<double>(ySin * xCos), static_cast<double>(-xSin), static_cast<double>(yCos * xCos)};
+    double angle = ::acos(to.x * view.x + to.y * view.y + to.z * view.z);
+    // BlocksAttacks.resolveBlockedDamage: one DamageReduction(90, any type, 0, 1)
+    float blocked = 0.0F;
+    if (!(angle > static_cast<double>(static_cast<float>(3.141592653589793 / 180.0) * ShieldStats::kHorizontalBlockingAngle)))
+        blocked += mth::clamp(0.0F + 1.0F * damage, 0.0F, damage);
+    blocked = mth::clamp(blocked, 0.0F, damage);
+    // hurtBlockingItem: the shield's durability
+    int32_t itemDamage = blocked < ShieldStats::kItemDamageThreshold
+        ? 0 : mth::floor(static_cast<double>(ShieldStats::kItemDamageBase + ShieldStats::kItemDamageFactor * blocked));
+    if (itemDamage > 0) {
+        int32_t& used = victim.damageOf(victim.flagOffhand);
+        used += itemDamage;
+        if (used >= stats(victim.useItem).durability) victim.body.unsupported = true;  // breaking not ported
+    }
+    if (blocked > 0.0F) {
+        // blockUsingItem: attacker.blockedByItem shoves the defender only on a
+        // partial block (impossible with a shield); then the disable, when the
+        // attacker's weapon item is its active item (not using anything).
+        float seconds = attacker.flagUsing ? 0.0F : stats(attacker.mainHand()).disableSeconds;
+        if (seconds > 0.0F) {
+            float scaled = seconds * ShieldStats::kDisableCooldownScale;
+            int32_t ticks = scaled > 0.0F ? static_cast<int32_t>(::floorf(scaled * 20.0F + 0.5F)) : 0;  // Math.round
+            if (ticks > 0) {
+                victim.shieldCooldown = ticks;
+                victim.shieldCooldownDuration = ticks;
+                victimReplies.cooldown = true;  // ServerItemCooldowns.onCooldownStarted
+                victimReplies.cooldownTicks = ticks;
+                victim.stopUsingItem();
+            }
+        }
+    }
+    return blocked;
+}
+
 // LivingEntity.hurtServer for a player hit by a player's melee attack.
-MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float damage) {
+MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float damage, ServerReplies& victimReplies,
+                        const float* sinTab) {
     if (victim.health <= 0.0F) return false;  // isDeadOrDying
     if (damage == 0.0F) return false;         // Player.hurtServer
+    float damageBlocked = applyItemBlocking(victim, attacker, damage, victimReplies, sinTab);
+    damage -= damageBlocked;
+    bool blocked = damageBlocked > 0.0F;
     bool tookFullDamage = true;
     float dealt;
     if (static_cast<float>(victim.damageCooldownTime) > 10.0F) {
@@ -472,25 +733,33 @@ MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float da
     }
     if (tookFullDamage) victim.hurtTime = CombatConstants::kHurtDuration;
     if (tookFullDamage) {
-        victim.syncVelocity = true;  // markHurt
+        // Blocked: onBlocked (a sound) instead of the damage event; no markHurt
+        // and no knockback when fully blocked.
+        if (!blocked || damage > 0.0F) victim.syncVelocity = true;  // markHurt
+        bool fullyBlocked = blocked && damage <= 0.0F;
         // dealDefaultKnockback: from the damage source's position (the attacker).
-        knockback(victim, static_cast<double>(0.4F), attacker.body.x - victim.body.x, attacker.body.z - victim.body.z);
+        if (!fullyBlocked)
+            knockback(victim, static_cast<double>(0.4F), attacker.body.x - victim.body.x, attacker.body.z - victim.body.z);
     }
     if (victim.health <= 0.0F) {  // no totem in scope: ServerPlayer.die
         victim.dead = true;
-        // dropAllDeathLoot empties the hand; the item change resets the attack
-        // strength at the dead player's next Player.tick (still this step).
-        if (victim.weapon != Weapon::Hand) {
-            victim.weapon = Weapon::Hand;
-            victim.weaponChanged = true;
+        // dropAllDeathLoot empties the inventory; the item change resets the
+        // attack strength at the dead player's next Player.tick (still this step).
+        for (int32_t k = 0; k < 9; ++k) {
+            victim.hotbar[k] = Weapon::Hand;
+            victim.hotbarDamage[k] = 0;
         }
+        victim.offhand = Weapon::Hand;
+        victim.offhandDamage = 0;
     }
-    return true;
+    return !blocked || damage > 0.0F;
 }
 
 // Player.attack (bare hand) followed by causeExtraKnockback.
 MCP_HD inline void attack(ServerCopy& a, ServerCopy& target, ServerReplies& targetReplies, const float* sinTab) {
-    float baseDamage = static_cast<float>(attackDamageAttribute(a.weapon));
+    // The attributes are those of the item held at the last server tick; the
+    // weapon item (durability, the shield disable) is the one in hand now.
+    float baseDamage = static_cast<float>(attackDamageAttribute(a.attrWeapon));
     float strength = a.attackStrengthScale(0.5F);
     float magicBoost = strength * (baseDamage - baseDamage);  // no enchantments
     baseDamage *= 0.2F + strength * strength * 0.8F;         // baseDamageScaleFactor
@@ -502,11 +771,12 @@ MCP_HD inline void attack(ServerCopy& a, ServerCopy& target, ServerReplies& targ
     if (crit) baseDamage *= 1.5F;
     float totalDamage = baseDamage + magicBoost;
     Vec3 oldMovement = target.body.vel;
-    if (!hurt(target, a, totalDamage)) return;
+    if (!hurt(target, a, totalDamage, targetReplies, sinTab)) return;
     // itemAttackInteraction: the weapon loses durability for the entity hit.
-    if (a.weapon != Weapon::Hand) {
-        a.weaponDamage += stats(a.weapon).damagePerHit;
-        if (a.weaponDamage >= stats(a.weapon).durability) a.body.unsupported = true;  // breaking not ported
+    Weapon held = a.mainHand();
+    if (stats(held).damagePerHit > 0) {
+        a.hotbarDamage[a.selected] += stats(held).damagePerHit;
+        if (a.hotbarDamage[a.selected] >= stats(held).durability) a.body.unsupported = true;  // breaking not ported
     }
     // causeExtraKnockback: getKnockback is ATTACK_KNOCKBACK (0) / 2.
     float knockbackAmount = 0.0F / 2.0F + (knockbackAttack ? 0.5F : 0.0F);
@@ -588,6 +858,12 @@ MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w, ServerCopy* other =
     sp.lastGoodZ = b.z;
     // LivingEntity.baseTick
     if (sp.hurtTime > 0) sp.hurtTime--;
+    // LivingEntity.tick: updatingUsingItem, then detectEquipmentUpdates
+    if (sp.flagUsing) {
+        if (sp.inHand(sp.flagOffhand) == sp.useItem) sp.useItemRemaining--;  // never reaches 0 in an episode
+        else sp.stopUsingItem();
+    }
+    sp.attrWeapon = sp.mainHand();
     // LivingEntity.aiStep
     if (b.noJumpDelay > 0) b.noJumpDelay--;
     {
@@ -615,12 +891,14 @@ MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w, ServerCopy* other =
                  movement.z * static_cast<double>(friction)};
     // End of aiStep: push the other player, from where travel just moved this copy.
     if (other != nullptr) pushEntities(sp, *other);
+    sp.yHeadRot = b.yRot;  // Player.aiStep
     // Player.tick
     sp.attackStrengthTicker++;
-    if (sp.weaponChanged) {  // !ItemStack.isSameItem(lastItemInMainHand, mainHand)
+    if (sp.mainHand() != sp.lastMainHand) {  // !ItemStack.isSameItem(lastItemInMainHand, mainHand)
         sp.attackStrengthTicker = 0;
-        sp.weaponChanged = false;
+        sp.lastMainHand = sp.mainHand();
     }
+    if (sp.shieldCooldown > 0) sp.shieldCooldown--;  // cooldowns.tick()
     // absSnapTo(firstGood)
     b.x = firstGoodX;
     b.y = firstGoodY;
@@ -634,7 +912,8 @@ struct DuelStart {
     double x = 0.5, z = 0.5;
     float yaw = 0.0F;
     float health = CombatConstants::kMaxHealth;
-    Weapon weapon = Weapon::Hand;
+    Weapon hotbar[9] = {};  // slot 0 is selected
+    Weapon offhand = Weapon::Hand;
 };
 
 // A zero-latency duel, stepped exactly like the oracle harness.
@@ -644,7 +923,8 @@ struct Duel {
     // Place both players and run the login handshake (three server ticks).
     template <typename World>
     MCP_HD void spawn(int32_t i, double x, double y, double z, float yaw, const World& w,
-                      float health = CombatConstants::kMaxHealth, Weapon weapon = Weapon::Hand) {
+                      float health = CombatConstants::kMaxHealth, Weapon weapon = Weapon::Hand,
+                      const Weapon* hotbar = nullptr, Weapon offhand = Weapon::Hand) {
         DuelPlayer& d = p[i];
         d = DuelPlayer{};
         d.client.x = d.client.xo = x;
@@ -664,8 +944,10 @@ struct Duel {
         s.lastGoodY = y;
         s.lastGoodZ = z;
         s.health = health;
-        s.weapon = weapon;
-        s.weaponChanged = weapon != Weapon::Hand;  // equipped at login: reset on the first Player.tick
+        // Equipped at login: the first Player.tick applies the modifiers and resets the strength.
+        for (int32_t k = 0; k < 9; ++k) s.hotbar[k] = hotbar != nullptr ? hotbar[k] : Weapon::Hand;
+        if (hotbar == nullptr) s.hotbar[0] = weapon;
+        s.offhand = offhand;
         for (int32_t k = 0; k < 3; ++k) duel::serverTickPlayer(s, w);
         // The tracker starts when the player joins (not yet on the ground, the
         // yaw not yet wrapped by the teleport acknowledgement). The first two
@@ -712,8 +994,41 @@ struct Duel {
             // Handlers that require hasClientLoaded() skip a player who died earlier
             // in this step; handlePunch does not check it.
             bool loaded = !me.server.dead;
-            if (pk.attack && loaded) duel::handleAttack(me.server, other.server, other.replies, sinTab);
-            if (pk.punches > 0) me.server.attackStrengthTicker = 0;  // handlePunch -> resetAttackStrengthTicker
+            ServerCopy& sv = me.server;
+            for (int32_t k = 0; k < pk.actionCount; ++k) {
+                const ActionPacket& ap = pk.actions[k];
+                switch (ap.kind) {
+                    case ActionKind::Carried:  // handleSetCarriedItem (no hasClientLoaded check)
+                        if (sv.selected != ap.arg && sv.flagUsing && !sv.flagOffhand) sv.stopUsingItem();
+                        sv.selected = ap.arg;
+                        break;
+                    case ActionKind::Attack:
+                        if (loaded) duel::handleAttack(sv, other.server, other.replies, sinTab);
+                        break;
+                    case ActionKind::Punch:  // handlePunch -> resetAttackStrengthTicker
+                        sv.attackStrengthTicker = 0;
+                        break;
+                    case ActionKind::Interact:   // Player.interactOn: PASS for these items and a player
+                    case ActionKind::UseItemOn:  // no block in the arena reacts to these items
+                        break;
+                    case ActionKind::UseItem: {  // handleUseItem
+                        Weapon item = sv.inHand(ap.arg == 1);
+                        if (!loaded || item == Weapon::Hand) break;
+                        float ty = duel::wrapDegrees(ap.yRot), tx = duel::wrapDegrees(ap.xRot);
+                        if (tx != sv.body.xRot || ty != sv.body.yRot) {  // absSnapRotationTo
+                            sv.body.yRot = ::fmodf(ty, 360.0F);
+                            sv.body.xRot = ::fmodf(mth::clamp(tx, -90.0F, 90.0F), 360.0F);
+                        }
+                        // ServerPlayerGameMode.useItem: PASS on cooldown; a shield is raised
+                        // (CONSUME: no swing); anything else passes.
+                        if (stats(item).blocksAttacks && !(sv.shieldCooldown > 0)) sv.startUsingItem(ap.arg == 1);
+                        break;
+                    }
+                    case ActionKind::Release:  // handlePlayerAction RELEASE_USE_ITEM -> releaseUsingItem
+                        if (loaded) sv.stopUsingItem();
+                        break;
+                }
+            }
             if (pk.input && pk.inputKeys.shift && loaded) me.server.body.unsupported = true;  // server-side sneaking not ported
             if (pk.sprintCommand != 0 && loaded) me.server.setSprinting(pk.sprintCommand > 0);
             if (pk.move && loaded) duel::handleMove(me.server, pk.movePacket, w, sinTab);
@@ -728,6 +1043,14 @@ struct Duel {
                                                           s.body.onGround, s.needsSync, s.sprintFlagDirty || s.dataDirty);
             s.needsSync = false;
             s.dataDirty = false;
+            if (s.flagsDirty) {  // the living-entity flags, to the player and to its trackers
+                r.useFlags = true;
+                r.flagUsing = s.flagUsing;
+                r.flagOffhand = s.flagOffhand;
+                p[1 - i].replies.viewFlags = true;
+                p[1 - i].replies.viewUsing = s.flagUsing;
+                s.flagsDirty = false;
+            }
             if (s.sprintFlagDirty) {
                 r.sprintFlag = true;
                 r.sprintFlagValue = s.body.sprinting;
@@ -765,8 +1088,8 @@ struct Duel {
     template <typename World>
     MCP_HD void reset(const DuelStart& a, const DuelStart& b, const World& w, uint64_t seed = 0) {
         double y = static_cast<double>(w.surfaceY);
-        spawn(0, a.x, y, a.z, a.yaw, w, a.health, a.weapon);
-        spawn(1, b.x, y, b.z, b.yaw, w, b.health, b.weapon);
+        spawn(0, a.x, y, a.z, a.yaw, w, a.health, a.hotbar[0], a.hotbar, a.offhand);
+        spawn(1, b.x, y, b.z, b.yaw, w, b.health, b.hotbar[0], b.hotbar, b.offhand);
         pairViews();
         p[0].server.rng = SplitMix64{seed * 2 + 1};
         p[1].server.rng = SplitMix64{seed * 2 + 2};

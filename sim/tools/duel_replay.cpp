@@ -23,6 +23,9 @@ struct Start {
     float yaw = 0.0F;
     float health = 20.0F;
     Weapon weapon = Weapon::Hand;
+    Weapon hotbar[9] = {};
+    bool hasHotbar = false;
+    Weapon offhand = Weapon::Hand;
 };
 
 struct Scenario {
@@ -59,6 +62,11 @@ DuelInput parseInput(const std::string& spec, float& yaw, float& pitch, const st
         else if (t == "attack") in.attack = in.attackHeld = true;
         else if (t == "tap") in.attack = true;
         else if (t == "hold") in.attackHeld = true;
+        else if (t == "use") in.use = true;
+        else if (t.rfind("slot=", 0) == 0) {
+            in.slot = std::atoi(t.c_str() + 5);
+            if (in.slot < 0 || in.slot > 8) fail(where, "slot must be 0-8");
+        }
         else if (t != "idle") fail(where, "unknown token " + t);
     }
     in.yaw = yaw;
@@ -100,6 +108,20 @@ Scenario parseScenario(const std::string& path) {
                 else if (k == "health") st.health = std::strtof(v.c_str(), nullptr);
                 else if (k == "item") {
                     if (!weaponByName(v.c_str(), st.weapon)) fail(where, "unsupported item " + v);
+                } else if (k == "hotbar") {
+                    st.hasHotbar = true;
+                    size_t slot = 0, from = 0;
+                    while (true) {
+                        size_t comma = v.find(',', from);
+                        std::string item = v.substr(from, comma == std::string::npos ? std::string::npos : comma - from);
+                        if (slot >= 9) fail(where, "a hotbar has 9 slots");
+                        if (item != "-" && !weaponByName(item.c_str(), st.hotbar[slot])) fail(where, "unsupported item " + item);
+                        slot++;
+                        if (comma == std::string::npos) break;
+                        from = comma + 1;
+                    }
+                } else if (k == "offhand") {
+                    if (!weaponByName(v.c_str(), st.offhand)) fail(where, "unsupported item " + v);
                 }
                 else fail(where, "unknown start key " + k);
             }
@@ -167,7 +189,10 @@ void writeState(std::FILE* out, const DuelPlayer& d) {
                  "\", \"pick\": %d, \"pick.x\": \"%016" PRIx64 "\", \"pick.y\": \"%016" PRIx64 "\", \"pick.z\": \"%016" PRIx64
                  "\", \"missTime\": %d, \"gotVelocity\": %s, \"sentAttack\": %s, \"teleports\": 0"
                  ", \"view.x\": \"%016" PRIx64 "\", \"view.y\": \"%016" PRIx64 "\", \"view.z\": \"%016" PRIx64
-                 "\", \"view.yRot\": \"%08" PRIx32 "\", \"view.recv\": %d}",
+                 "\", \"view.yRot\": \"%08" PRIx32 "\", \"view.recv\": %d, \"slot\": %d, \"using\": %s"
+                 ", \"cooldown\": \"%08" PRIx32 "\", \"server.slot\": %d, \"server.using\": %s, \"server.useTicks\": %d"
+                 ", \"server.blocking\": %s, \"server.cooldown\": \"%08" PRIx32 "\", \"server.yHeadRot\": \"%08" PRIx32
+                 "\", \"server.mainDamage\": %d, \"server.offDamage\": %d, \"view.using\": %s}",
                  j::dbits(c.x), j::dbits(c.y), j::dbits(c.z), j::dbits(c.vel.x), j::dbits(c.vel.y), j::dbits(c.vel.z),
                  j::fbits(c.yRot), tf(c.onGround), tf(c.sprinting), tf(s.body.sprinting), j::fbits(s.health),
                  s.hurtTime, s.damageCooldownTime, tf(s.body.onGround), j::dbits(s.fallDistance),
@@ -175,7 +200,10 @@ void writeState(std::FILE* out, const DuelPlayer& d) {
                  j::dbits(s.body.vel.z), j::fbits(s.body.yRot), j::dbits(c.movementSpeedAttribute()),
                  static_cast<int>(d.pick.type), j::dbits(d.pick.location.x), j::dbits(d.pick.location.y),
                  j::dbits(d.pick.location.z), d.missTime, tf(d.gotVelocity), tf(d.sentAttack), j::dbits(d.view.pos.x),
-                 j::dbits(d.view.pos.y), j::dbits(d.view.pos.z), j::fbits(d.view.yRot), d.viewRecv);
+                 j::dbits(d.view.pos.y), j::dbits(d.view.pos.z), j::fbits(d.view.yRot), d.viewRecv, d.selected,
+                 tf(d.usingItem), j::fbits(d.cooldown > 0 ? static_cast<float>(d.cooldown) / static_cast<float>(d.cooldownDuration) : 0.0F),
+                 s.selected, tf(s.flagUsing), s.ticksUsingItem(), tf(s.blocking()), j::fbits(s.shieldCooldownPercent()),
+                 j::fbits(s.yHeadRot), s.hotbarDamage[s.selected], s.offhandDamage, tf(d.viewUsing));
 }
 
 }  // namespace
@@ -192,8 +220,8 @@ int main(int argc, char** argv) {
     double y = static_cast<double>(world.surfaceY);
 
     Duel duel;
-    duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world, s.a.health, s.a.weapon);
-    duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world, s.b.health, s.b.weapon);
+    duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world, s.a.health, s.a.weapon, s.a.hasHotbar ? s.a.hotbar : nullptr, s.a.offhand);
+    duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world, s.b.health, s.b.weapon, s.b.hasHotbar ? s.b.hotbar : nullptr, s.b.offhand);
     duel.pairViews();
 
     std::FILE* out = std::fopen(argv[3], "w");
@@ -209,7 +237,11 @@ int main(int argc, char** argv) {
                  "\"server.yRot\": \"f32\", \"speedAttr\": \"f64\", \"pick\": \"i32\", \"pick.x\": \"f64\", "
                  "\"pick.y\": \"f64\", \"pick.z\": \"f64\", \"missTime\": \"i32\", \"gotVelocity\": \"bool\", "
                  "\"sentAttack\": \"bool\", \"teleports\": \"i32\", \"view.x\": \"f64\", \"view.y\": \"f64\", "
-                 "\"view.z\": \"f64\", \"view.yRot\": \"f32\", \"view.recv\": \"i32\"}, "
+                 "\"view.z\": \"f64\", \"view.yRot\": \"f32\", \"view.recv\": \"i32\", \"slot\": \"i32\", "
+                 "\"using\": \"bool\", \"cooldown\": \"f32\", \"server.slot\": \"i32\", \"server.using\": \"bool\", "
+                 "\"server.useTicks\": \"i32\", \"server.blocking\": \"bool\", \"server.cooldown\": \"f32\", "
+                 "\"server.yHeadRot\": \"f32\", \"server.mainDamage\": \"i32\", \"server.offDamage\": \"i32\", "
+                 "\"view.using\": \"bool\"}, "
                  "\"meta\": {\"scenario\": \"%s\", \"players\": [\"A\", \"B\"]}}\n",
                  s.name.c_str());
     for (size_t t = 0; t < s.ta.size(); ++t) {

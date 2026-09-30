@@ -3,7 +3,7 @@
 # modifiers still belong to the sword (they change in the next server tick), the
 # attack strength is the sword's, and the weapon item is the axe.
 start A hotbar=netherite_sword,wooden_axe
-start B
+start B z=3.0 yaw=180
 20 idle | idle
 1  slot=1 tap | idle
 30 idle | idle

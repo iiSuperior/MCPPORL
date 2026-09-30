@@ -2,7 +2,7 @@
 # hurt time). B lowers the shield; A's weak follow-up 5 ticks later deals its
 # damage minus 0 but, not being full damage, no knockback.
 start A item=netherite_sword
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 8  idle | use
 1  tap  | use

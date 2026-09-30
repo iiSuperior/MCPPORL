@@ -3,7 +3,7 @@
 # blocked: no damage or knockback, the shield takes floor(1 + 7) durability, and B
 # still gets the damage cooldown. After B lowers it, a full hit lands again.
 start A item=diamond_sword
-start B offhand=shield
+start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 3  idle | use
 1  tap  | use
