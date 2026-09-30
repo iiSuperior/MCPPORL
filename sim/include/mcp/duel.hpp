@@ -14,7 +14,7 @@
 // Each client sees the other player through the entity tracker and the
 // client-side interpolation of tracker.hpp, and aims at that view.
 //
-// Scope: bare hands, no armor or effects, no shields, no totems, no fall
+// Scope: bare hands, swords and axes (weapons.hpp), no armor or effects, no shields, no totems, no fall
 // damage, no sneaking, full-cube flat arenas, no health regeneration (the
 // oracle disables it). Leaving that scope sets
 // `unsupported` instead of silently diverging. A death ends the episode: the
@@ -28,13 +28,12 @@
 #include "mcp/player.hpp"
 #include "mcp/rng.hpp"
 #include "mcp/tracker.hpp"
+#include "mcp/weapons.hpp"
 
 namespace mcp {
 
 struct CombatConstants {
     static constexpr float kMaxHealth = 20.0F;
-    static constexpr float kAttackDamage = 1.0F;                 // Attributes.ATTACK_DAMAGE, player base
-    static constexpr double kAttackSpeed = 4.0;                   // Attributes.ATTACK_SPEED, player base
     static constexpr float kEntityInteractionRange = 3.0F;        // Attributes.ENTITY_INTERACTION_RANGE
     static constexpr double kAttackRangeBuffer = 3.0;             // handleAttack's extra buffer
     static constexpr float kEyeHeightStanding = 1.62F;
@@ -90,6 +89,12 @@ struct ServerCopy {
     int32_t hurtTime = 0;
     int32_t damageCooldownTime = 0;
     int32_t attackStrengthTicker = 0;
+    // Main-hand item. A changed item resets the attack strength at the next
+    // Player.tick (lastItemInMainHand); durability used is tracked so a
+    // broken weapon is flagged instead of silently kept.
+    Weapon weapon = Weapon::Hand;
+    bool weaponChanged = false;
+    int32_t weaponDamage = 0;
     bool syncVelocity = false;
     // ServerPlayer.die -> markClientUnloadedAfterDeath: hasClientLoaded() turns
     // false, so the dead player's later packets are ignored and it takes no damage.
@@ -115,7 +120,7 @@ struct ServerCopy {
 
     // Player.getAttackStrengthScale
     MCP_HD float attackStrengthScale(float a) const {
-        float delay = static_cast<float>(1.0 / CombatConstants::kAttackSpeed * 20.0);
+        float delay = attackStrengthDelay(weapon);
         return mth::clamp((static_cast<float>(attackStrengthTicker) + a) / delay, 0.0F, 1.0F);
     }
 };
@@ -463,7 +468,7 @@ MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float da
 
 // Player.attack (bare hand) followed by causeExtraKnockback.
 MCP_HD inline void attack(ServerCopy& a, ServerCopy& target, ServerReplies& targetReplies, const float* sinTab) {
-    float baseDamage = CombatConstants::kAttackDamage;
+    float baseDamage = static_cast<float>(attackDamageAttribute(a.weapon));
     float strength = a.attackStrengthScale(0.5F);
     float magicBoost = strength * (baseDamage - baseDamage);  // no enchantments
     baseDamage *= 0.2F + strength * strength * 0.8F;         // baseDamageScaleFactor
@@ -476,6 +481,11 @@ MCP_HD inline void attack(ServerCopy& a, ServerCopy& target, ServerReplies& targ
     float totalDamage = baseDamage + magicBoost;
     Vec3 oldMovement = target.body.vel;
     if (!hurt(target, a, totalDamage)) return;
+    // itemAttackInteraction: the weapon loses durability for the entity hit.
+    if (a.weapon != Weapon::Hand) {
+        a.weaponDamage += stats(a.weapon).damagePerHit;
+        if (a.weaponDamage >= stats(a.weapon).durability) a.body.unsupported = true;  // breaking not ported
+    }
     // causeExtraKnockback: getKnockback is ATTACK_KNOCKBACK (0) / 2.
     float knockbackAmount = 0.0F / 2.0F + (knockbackAttack ? 0.5F : 0.0F);
     if (knockbackAmount > 0.0F) {
@@ -585,6 +595,10 @@ MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w, ServerCopy* other =
     if (other != nullptr) pushEntities(sp, *other);
     // Player.tick
     sp.attackStrengthTicker++;
+    if (sp.weaponChanged) {  // !ItemStack.isSameItem(lastItemInMainHand, mainHand)
+        sp.attackStrengthTicker = 0;
+        sp.weaponChanged = false;
+    }
     // absSnapTo(firstGood)
     b.x = firstGoodX;
     b.y = firstGoodY;
@@ -598,6 +612,7 @@ struct DuelStart {
     double x = 0.5, z = 0.5;
     float yaw = 0.0F;
     float health = CombatConstants::kMaxHealth;
+    Weapon weapon = Weapon::Hand;
 };
 
 // A zero-latency duel, stepped exactly like the oracle harness.
@@ -607,7 +622,7 @@ struct Duel {
     // Place both players and run the login handshake (three server ticks).
     template <typename World>
     MCP_HD void spawn(int32_t i, double x, double y, double z, float yaw, const World& w,
-                      float health = CombatConstants::kMaxHealth) {
+                      float health = CombatConstants::kMaxHealth, Weapon weapon = Weapon::Hand) {
         DuelPlayer& d = p[i];
         d = DuelPlayer{};
         d.client.x = d.client.xo = x;
@@ -627,6 +642,8 @@ struct Duel {
         s.lastGoodY = y;
         s.lastGoodZ = z;
         s.health = health;
+        s.weapon = weapon;
+        s.weaponChanged = weapon != Weapon::Hand;  // equipped at login: reset on the first Player.tick
         for (int32_t k = 0; k < 3; ++k) duel::serverTickPlayer(s, w);
         // The tracker starts when the player joins (not yet on the ground, the
         // yaw not yet wrapped by the teleport acknowledgement). The first two
@@ -723,8 +740,8 @@ struct Duel {
     template <typename World>
     MCP_HD void reset(const DuelStart& a, const DuelStart& b, const World& w, uint64_t seed = 0) {
         double y = static_cast<double>(w.surfaceY);
-        spawn(0, a.x, y, a.z, a.yaw, w, a.health);
-        spawn(1, b.x, y, b.z, b.yaw, w, b.health);
+        spawn(0, a.x, y, a.z, a.yaw, w, a.health, a.weapon);
+        spawn(1, b.x, y, b.z, b.yaw, w, b.health, b.weapon);
         pairViews();
         p[0].server.rng = SplitMix64{seed * 2 + 1};
         p[1].server.rng = SplitMix64{seed * 2 + 2};

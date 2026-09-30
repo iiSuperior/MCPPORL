@@ -10,7 +10,12 @@ import java.util.Locale;
 /** Two-player combat script (see oracle/combat/README.md). */
 public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
 
-    public record Start(double x, double z, float yaw, float health) {}
+    /** item: the main-hand item's field name in {@code Items} (lower case), or empty for a bare hand. */
+    public record Start(double x, double z, float yaw, float health, String item) {
+        public Start(double x, double z, float yaw, float health) {
+            this(x, z, yaw, health, "");
+        }
+    }
 
     /**
      * Inputs for one player on one tick. yaw/pitch are the rotation during the tick
@@ -47,6 +52,7 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                     String[] tok = line.split("\\s+");
                     double x = 0.5, z = 0.5;
                     float yaw = 0.0F, health = 20.0F;
+                    String item = "";
                     for (int i = 2; i < tok.length; i++) {
                         String[] kv = tok[i].split("=", 2);
                         switch (kv[0]) {
@@ -54,10 +60,11 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                             case "z" -> z = Double.parseDouble(kv[1]);
                             case "yaw" -> yaw = Float.parseFloat(kv[1]);
                             case "health" -> health = Float.parseFloat(kv[1]);
+                            case "item" -> item = kv[1];
                             default -> throw new IllegalArgumentException("unknown start key " + kv[0]);
                         }
                     }
-                    Start s = new Start(x, z, yaw, health);
+                    Start s = new Start(x, z, yaw, health, item);
                     switch (tok[1]) {
                         case "a" -> a = s;
                         case "b" -> b = s;

@@ -1,0 +1,7 @@
+# A diamond axe: 5.0 + 3.0 attack damage, attack speed 4.0 - 3.0 = 1.0 (a
+# 20-tick cooldown). A idles 30 ticks so the cooldown is full.
+start A x=0.5 z=0.5 yaw=0 item=diamond_axe
+start B x=0.5 z=3.0 yaw=180
+30 idle | idle
+1 attack | idle
+30 idle | idle

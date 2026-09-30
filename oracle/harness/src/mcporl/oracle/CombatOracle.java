@@ -48,6 +48,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.PositionMoveRotation;
 import net.minecraft.world.entity.PositionPath;
 import net.minecraft.network.protocol.game.VecDeltaCodec;
@@ -227,8 +231,11 @@ public final class CombatOracle {
         EmbeddedChannel channel = new EmbeddedChannel(new ChannelHandler[] {connection});
         server.getPlayerList().placeNewPlayer(connection, sp, cookie);
         if (start.health() != sp.getMaxHealth()) sp.setHealth(start.health());
+        ItemStack held = heldItem(start.item());
+        sp.setItemSlot(EquipmentSlot.MAINHAND, held.copy());
 
         OraclePlayer cp = new OraclePlayer(level, profile);
+        cp.setItemSlot(EquipmentSlot.MAINHAND, held.copy());
         cp.setPos(start.x(), y, start.z());
         cp.setYRot(start.yaw());
         cp.setOldPosAndRot();
@@ -240,6 +247,16 @@ public final class CombatOracle {
         side.xRotLast = cp.getXRot();
         collect(side);
         return side;
+    }
+
+    /** The main-hand item a scenario names: a field of {@code Items}, e.g. "diamond_sword". */
+    static ItemStack heldItem(String name) {
+        if (name.isEmpty()) return ItemStack.EMPTY;
+        try {
+            return new ItemStack((Item) Items.class.getField(name.toUpperCase(java.util.Locale.ROOT)).get(null));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalArgumentException("no item named " + name, e);
+        }
     }
 
     /** One client tick for `me`: pick, keybinds (click), movement, then sendChanges (Minecraft.tick). */

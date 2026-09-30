@@ -1,0 +1,14 @@
+# Diamond sword cooldown (12.5 ticks). A hits, follows B in, and clicks 8
+# ticks later: B is still in its damage cooldown and the weaker hit does not
+# beat the first, so no damage, but A's attack strength resets. The next click
+# comes 5 ticks after that: strength (5 + 0.5) / 12.5 = 0.44, damage
+# 7.0 x (0.2 + 0.8 x 0.44^2) = 2.48, no crit, no knockback bonus.
+start A x=0.5 z=0.5 yaw=0 item=diamond_sword
+start B x=0.5 z=2.8 yaw=180
+30 idle | idle
+1 attack | idle
+7 w | idle
+1 w attack | idle
+4 w | idle
+1 w attack | idle
+30 idle | idle

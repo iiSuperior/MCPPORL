@@ -22,6 +22,7 @@ struct Start {
     double x = 0.5, z = 0.5;
     float yaw = 0.0F;
     float health = 20.0F;
+    Weapon weapon = Weapon::Hand;
 };
 
 struct Scenario {
@@ -97,6 +98,9 @@ Scenario parseScenario(const std::string& path) {
                 else if (k == "z") st.z = std::strtod(v.c_str(), nullptr);
                 else if (k == "yaw") st.yaw = std::strtof(v.c_str(), nullptr);
                 else if (k == "health") st.health = std::strtof(v.c_str(), nullptr);
+                else if (k == "item") {
+                    if (!weaponByName(v.c_str(), st.weapon)) fail(where, "unsupported item " + v);
+                }
                 else fail(where, "unknown start key " + k);
             }
             if (tok[1] == "a") s.a = st;
@@ -188,8 +192,8 @@ int main(int argc, char** argv) {
     double y = static_cast<double>(world.surfaceY);
 
     Duel duel;
-    duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world, s.a.health);
-    duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world, s.b.health);
+    duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world, s.a.health, s.a.weapon);
+    duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world, s.b.health, s.b.weapon);
     duel.pairViews();
 
     std::FILE* out = std::fopen(argv[3], "w");

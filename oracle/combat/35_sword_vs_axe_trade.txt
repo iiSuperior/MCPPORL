@@ -1,0 +1,10 @@
+# Both sprint in and click together: A with a netherite sword, B with a stone
+# axe. A's packets come first. Sprint knockback needs full strength, which
+# both have after 30 idle ticks.
+start A x=0.5 z=0.5 yaw=0 item=netherite_sword
+start B x=0.5 z=5.0 yaw=180 item=stone_axe
+30 idle | idle
+5 w sprint | w sprint
+1 w sprint attack | w sprint attack
+2 w sprint | w sprint
+30 idle | idle
