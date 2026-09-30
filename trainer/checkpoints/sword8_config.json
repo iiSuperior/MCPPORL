@@ -1,0 +1,39 @@
+{
+ "n_duels": 256,
+ "rollout": 128,
+ "updates": 500,
+ "epochs": 4,
+ "minibatches": 8,
+ "lr": 0.0003,
+ "clip": 0.2,
+ "ent_coef": 0.01,
+ "vf_coef": 0.5,
+ "max_grad_norm": 0.5,
+ "lam": 0.95,
+ "hidden": 256,
+ "self_play": 0.5,
+ "dummy": 0.3,
+ "max_ticks": 600,
+ "start_dist": [
+  2.5,
+  6.0
+ ],
+ "weapons": [
+  "diamond_sword"
+ ],
+ "seed": 1,
+ "eval_every": 10,
+ "eval_episodes": 256,
+ "reward": {
+  "damage_dealt": 1.0,
+  "damage_taken": 1.0,
+  "win": 10.0,
+  "loss": 10.0,
+  "reach_shaping": 0.1,
+  "gamma": 0.99,
+  "aim_shaping": 0.2
+ },
+ "aim_dense": 0.05,
+ "reach_dense": 0.05,
+ "anneal": 0.6
+}
