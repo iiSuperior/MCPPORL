@@ -187,6 +187,39 @@ nothing. The disable does not depend on attack strength (44), and a swap-hit
 disables with the sword's attributes (45), which makes the break cheaper but
 does not give back the first strike.
 
+### Run B5: charging for wasted attacks and for draws
+
+Two reward terms (`RewardWeights::wastedAttack`, `draw`, both 0 by default):
+0.5 per attack that reaches the opponent but does nothing (no damage and no
+shield disabled: a sword into a raised shield or into the damage cooldown;
+an axe hit that disables the shield is a result), and 8 to both players at
+the time limit, so that never attacking is not the way out of the first
+penalty (a draw stays better than a loss, 10). Opponents as in B4, plus a
+reaction time of 3 to 8 ticks after the shield breaks; 25% of duels start
+with the axe in hand.
+
+At update 80 the greedy policy (argmax of every head, what the evaluations
+above use) still draws 99% against the never-lowering shield user. The
+policy itself, sampled as in training, plays the combo:
+
+| update 80, 64 fights | never-lowering: greedy | never-lowering: sampled | standard: greedy | standard: sampled |
+|---|---|---|---|---|
+| win | 2% | **42%** | 83% | 59% |
+| damage dealt / taken | 0.3 / 0.1 | 11.4 / 9.8 | 19.1 / 12.6 | 17.7 / 14.8 |
+| axe swaps with the shield up / down | 7.3 / 0 | 28.6 / 0.7 | 0.03 / 0 | 1.45 / 0.39 |
+| shields disabled | 0.02 | 0.66 | 0.02 | 0.11 |
+| swaps back to the sword while disabled | 0.02 | 1.28 | 0.02 | 0.23 |
+| hits into the raised shield | 8.6 | 5.1 | 3.4 | 2.2 |
+
+So it has learned all three answers, as a stochastic policy: an axe hit on a
+raised shield (0.66 disables a fight), the swap back to the netherite after
+the break (1.28), and not bothering against an opponent that lowers its
+shield on its own (1.45 axe swaps a fight against the standard user versus
+28.6 against the one that never lowers it, mostly while the shield is up).
+It is still clumsy: many swaps without a hit, since the click decision is
+spread over ticks (22% per tick with the axe in reach of the raised shield),
+which is also why the argmax never shows it.
+
 ### What went wrong on the way (runs 1 to 7)
 
 Each failure was the reward or the rules, not the code:
