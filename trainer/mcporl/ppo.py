@@ -54,8 +54,8 @@ class PPOConfig:
     # Dense training aids (reward.hpp): per tick, x the aim potential and while
     # in hit range. They make the first hits discoverable but can be farmed,
     # so they fall linearly to 0 by `anneal` x updates (docs/REWARD.md).
-    aim_dense: float = 0.01
-    reach_dense: float = 0.02
+    aim_dense: float = 0.05
+    reach_dense: float = 0.05
     anneal: float = 0.6
 
 
