@@ -2,11 +2,17 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 19: entity pushing between players (server copies push each other).
-net.minecraft.world.entity.LivingEntity pushEntities doPush isPushable
-net.minecraft.world.entity.Entity push isPushable isPassengerOfSameVehicle canBeCollidedWith
-net.minecraft.world.entity.player.Player isPushable doPush
-net.minecraft.server.level.ServerPlayer isPushable doPush push
-net.minecraft.world.level.Level getPushableEntities
-net.minecraft.world.level.EntityGetter getPushableEntities
-net.minecraft.world.entity.EntitySelector pushableBy :grep=pushable
+# Batch 20: how a client sees a remote player (tracking, position packets, interpolation).
+net.minecraft.world.entity.Entity :grep=interpolat|Interpolat|trackingPosition|getPositionCodec|setOldPosAndRot\(\)
+net.minecraft.world.entity.LivingEntity :grep=interpolat|Interpolat|lerpHead
+net.minecraft.world.entity.EntityType :grep=PLAYER\s=|clientTrackingRange\(|updateInterval\(
+net.minecraft.server.level.ServerEntity :fields
+net.minecraft.server.level.ServerEntity sendPairingData isFullPrecisionEncodingRequired
+net.minecraft.network.protocol.game.VecDeltaCodec :all
+net.minecraft.world.entity.InterpolationTracker :all
+net.minecraft.world.entity.PositionPath :all
+net.minecraft.network.protocol.game.ClientboundMoveEntityPacket :all
+net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket :all
+net.minecraft.client.multiplayer.ClientLevel tickNonPassenger tickEntities
+net.minecraft.client.player.AbstractClientPlayer tick aiStep
+net.minecraft.client.multiplayer.ClientPacketListener handleSetEntityMotion
