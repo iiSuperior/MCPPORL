@@ -2,13 +2,17 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 22: interpolation internals and entity tracking cadence.
-net.minecraft.world.entity.AbstractInterpolationHandler :all
-net.minecraft.world.entity.SteppedInterpolationTracker :all
-net.minecraft.core.PositionAndRotation :all
-net.minecraft.server.level.ServerEntity :grep=^import|UpdateInterval
-net.minecraft.world.entity.EntityType :grep=PLAYER\s=\sregister|\.updateInterval\(2\)|\.clientTrackingRange\(32\)
-net.minecraft.world.phys.Vec3 lerp
-net.minecraft.world.level.Level getRelativeTickSpeed
-net.minecraft.server.level.ChunkMap :grep=serverEntity\.|seenBy\.|void updatePlayer|void tick\(\)|sendChanges
-net.minecraft.world.entity.Entity syncPacketPositionCodec setPosRaw setRot absSnapTo
+# Batch 23: client-side pushing by remote players, tracker cadence, sync flags.
+net.minecraft.world.entity.Entity push isPushable :grep=syncPosition|needsSync\s=|boolean noPhysics
+net.minecraft.world.entity.LivingEntity pushEntities doPush isPushable
+net.minecraft.world.entity.player.Player isPushable
+net.minecraft.world.entity.EntitySelector pushableBy
+net.minecraft.world.level.Level getPushableEntities
+net.minecraft.world.entity.UpdateInterval :all
+net.minecraft.world.entity.EntityType :grep=PLAYER =|Builder.<Player>|updateInterval\(2\)
+net.minecraft.server.level.ServerPlayer :grep=syncPosition
+net.minecraft.server.network.ServerGamePacketListenerImpl :grep=syncPosition
+net.minecraft.client.player.LocalPlayer :grep=isLocalPlayer|pushEntities
+net.minecraft.client.multiplayer.ClientLevel addEntity :grep=tickingEntities
+net.minecraft.world.level.entity.EntityTickList :all
+net.minecraft.client.Minecraft :grep=tickEntities|handleKeybinds\(\)|gameRenderer.pick|missTime--
