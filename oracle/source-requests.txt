@@ -2,18 +2,13 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 14: the rest of the click path (pick, punch packet, miss time).
-net.minecraft.client.player.LocalPlayer raycastHitResult getKnownMovement
-net.minecraft.world.entity.player.Player raycastHitResult getKnownMovement swing
-net.minecraft.world.entity.Entity raycastHitResult canBePickedFromInside getViewYRot getViewXRot getKnownMovement blockInteractionRange
-net.minecraft.world.entity.LivingEntity swing getViewYRot
-net.minecraft.world.entity.projectile.ProjectileUtil getManyEntityHitResult
-net.minecraft.world.level.Level clipIncludingBorder
-net.minecraft.world.phys.shapes.VoxelShape clip clipPoint
-net.minecraft.world.phys.AABB clipPoint ofSize
-net.minecraft.util.Mth lerp frac sign lengthSquared
-net.minecraft.client.multiplayer.MultiPlayerGameMode hasMissTime
-net.minecraft.server.network.ServerGamePacketListenerImpl :grep=Punch|handleAnimate|swingAndResetAttackStrength
-net.minecraft.server.level.ServerPlayer :grep=Punch|swingAndResetAttackStrength|resetAttackStrength
-net.minecraft.world.entity.player.Player :grep=Punch|swingAndResetAttackStrength|resetAttackStrength
-net.minecraft.network.protocol.game.ServerboundPunchPacket :all
+# Batch 15: pick and punch bodies.
+net.minecraft.client.player.LocalPlayer pick filterHitResult
+net.minecraft.server.network.ServerGamePacketListenerImpl handlePunch
+net.minecraft.server.level.ServerPlayer swingAndResetAttackStrength
+net.minecraft.world.entity.player.Player blockInteractionRange isHandsBusy
+net.minecraft.world.entity.LivingEntity getModifiedSwingDuration getCurrentSwingDuration
+net.minecraft.world.entity.SwingState :all
+net.minecraft.world.entity.EntitySelector :grep=CAN_BE_PICKED
+net.minecraft.world.item.ItemStack getAttackAnimation
+net.minecraft.world.item.SwingAnimation :all
