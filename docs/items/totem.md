@@ -64,21 +64,21 @@ None in the totem path itself.
 
 ## Oracle scenarios
 
-1. `70_totem_proc`: B at 1 health holding totem in off-hand; A diamond-sword
+1. `80_totem_proc`: B at 1 health holding totem in off-hand; A diamond-sword
    crit (9 damage). Expect: B survives at 1.0 health, totem consumed,
    effects [Regen 900/1, Absorption 100/1, FireRes 800/0], no death.
    Trace: health, effects, off-hand stack count.
-2. `71_totem_main_hand_priority`: totems in both hands; lethal hit.
+2. `81_totem_main_hand_priority`: totems in both hands; lethal hit.
    Expect: main-hand stack shrinks, off-hand untouched.
-3. `72_totem_bypass`: lethal `BYPASSES_INVULNERABILITY` damage (harness
+3. `82_totem_bypass`: lethal `BYPASSES_INVULNERABILITY` damage (harness
    only) → no proc, death.
-4. `73_totem_trade`: both at 1 health, A and B lethal same tick. Expect: A's
+4. `83_totem_trade`: both at 1 health, A and B lethal same tick. Expect: A's
    packets first → B procs totem and survives at 1.0; B's attack packet is
    ignored (connection marked unloaded only on actual death — B didn't die,
    so does B's attack still land? This scenario pins the ordering: totem
    proc happens inside A's packet handling, B is alive when its own packets
    are handled → B's attack lands on A. Contrast with `28_trade_kill`.)
-5. `74_totem_absorption_clear`: B with absorption 8.0 from an apple takes
+5. `84_totem_absorption_clear`: B with absorption 8.0 from an apple takes
    lethal damage with totem. Expect absorption reset to 8.0 (not 16).
 
 New trace fields: `totemProcced` (bool), per-hand stack counts after the hit.

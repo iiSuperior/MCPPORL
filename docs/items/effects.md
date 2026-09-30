@@ -109,17 +109,17 @@ None in any of these effects' math (poison/regen/instant have no rolls).
 
 ## Oracle scenarios
 
-1. `80_regen_timing`: B at 10 health, Regen II 100t (golden apple). Expect
+1. `90_regen_timing`: B at 10 health, Regen II 100t (golden apple). Expect
    heals at durations 100, 75, 50, 25 (interval `50>>1 = 25`, tested on
    remaining duration): +1.0 each → 14.0 after 100 ticks.
-2. `81_strength_damage`: A with Strength I (attack damage +3) diamond sword:
+2. `91_strength_damage`: A with Strength I (attack damage +3) diamond sword:
    expect 9.0 per full hit; Strength II → 12.0.
-3. `82_resistance`: B Resistance I, A diamond sword: 6 → 4.8.
-4. `83_poison`: B Poison I; expect 1.0 magic damage every 25 ticks while
+3. `92_resistance`: B Resistance I, A diamond sword: 6 → 4.8.
+4. `93_poison`: B Poison I; expect 1.0 magic damage every 25 ticks while
    health > 1 (verify it cannot kill: health floors at 1.0).
-5. `84_absorption_stack`: golden apple then enchanted apple: absorption =
+5. `94_absorption_stack`: golden apple then enchanted apple: absorption =
    max(4, 16) = 16 (re-application takes the max, capped by MAX_ABSORPTION).
-6. `85_fire_res`: B with Fire Resistance takes `IS_FIRE` damage → no damage,
+6. `95_fire_res`: B with Fire Resistance takes `IS_FIRE` damage → no damage,
    no knockback, `hurtServer` returns false immediately.
 
 New trace fields: active effects with `(effect, duration, amplifier)` per

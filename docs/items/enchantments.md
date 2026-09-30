@@ -119,18 +119,18 @@ or inside `hurtAndBreak` (same tick). No per-tick state.
 
 ## Oracle scenarios
 
-1. `90_sharpness`: A diamond sword sharpness V, full strength: expect
+1. `100_sharpness`: A diamond sword sharpness V, full strength: expect
    6 + 3 = 9.0 (magicBoost = 1.0·3.0).
-2. `91_knockback_ench`: knockback II diamond sword sprint hit: expect the
+2. `101_knockback_ench`: knockback II diamond sword sprint hit: expect the
    extra-knockback strength 0.5 (sprint) + 1.0 (enchant) on top of base.
-3. `92_protection`: B full protection IV (total 16): diamond sword 6.0 →
+3. `102_protection`: B full protection IV (total 16): diamond sword 6.0 →
    armor step then ×(1−16/25)=×0.36.
-4. `93_fire_aspect`: fire aspect II hit → victim `remainingFireTicks` =
+4. `103_fire_aspect`: fire aspect II hit → victim `remainingFireTicks` =
    8·20 = 160 (verify `igniteForSeconds` = ×20).
-5. `94_unbreaking_statistical`: 200 hits with unbreaking III diamond sword;
+5. `104_unbreaking_statistical`: 200 hits with unbreaking III diamond sword;
    durability loss distribution ≈ binomial(200·1, 0.25 kept)… (statistical,
    not bit-exact — documents the distribution for the sim's stand-in RNG).
-6. `95_sweeping_edge`: sweeping edge III, sweep scenario from weapons.md:
+6. `105_sweeping_edge`: sweeping edge III, sweep scenario from weapons.md:
    ratio 0.75 → sweep damage `1.0 + 0.75·6.0 = 5.5` before enchant scaling.
 
 ## Open questions

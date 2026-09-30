@@ -100,19 +100,19 @@ see open questions).
 
 ## Oracle scenarios
 
-1. `60_eat_golden_apple`: B at 10 health eats a golden apple uninterrupted.
+1. `70_eat_golden_apple`: B at 10 health eats a golden apple uninterrupted.
    Expect after 32 ticks: food +4 (clamp 20), saturation +9.6, Regen II
    100t, Absorption I (4 hearts → absorption 4.0) 2400t. Trace: `foodLevel`,
    `saturation`, active effects with durations.
-2. `61_eat_interrupted`: B starts eating, A hits at tick 10. Expect: eating
+2. `71_eat_interrupted`: B starts eating, A hits at tick 10. Expect: eating
    aborted (damage → `stopUsingItem`? verify: hurt does not automatically
    stop using — check `releaseUsingItem` call sites; scenario pins it),
    no effects.
-3. `62_sprint_hunger_gate`: B food set to 6, tries to sprint. Expect: no
+3. `72_sprint_hunger_gate`: B food set to 6, tries to sprint. Expect: no
    sprint (client rule); server copy keeps `!sprinting`.
-4. `63_enchanted_apple`: full effect list with durations/amplifiers;
+4. `73_enchanted_apple`: full effect list with durations/amplifiers;
    absorption 2400t amp 3 → 16 absorption hearts (4·(1+3)).
-5. `64_move_while_eating`: B eats while walking forward; measure displacement
+5. `74_move_while_eating`: B eats while walking forward; measure displacement
    vs normal walk → 0.2× input scaling.
 
 New trace fields: `foodLevel`, `saturationLevel`, `exhaustionLevel`,

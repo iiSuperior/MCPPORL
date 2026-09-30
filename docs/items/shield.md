@@ -6,8 +6,9 @@ All facts verified in the decompiled 26.3 client jar unless marked otherwise.
 
 Raising a shield starts the "using item" state (right-click, server-authoritative).
 After a 5-tick raise delay the shield blocks: melee and projectile damage from
-within a 90-degree frontal arc is reduced to zero, the shield takes durability
-damage instead of the player, and the attacker is told about the block. Axes
+within a 90-degree half-angle (180 degrees total) frontal arc is reduced to
+zero, the shield takes durability damage instead of the player, and the
+attacker is told about the block. Axes
 (and anything with `disable_blocking_for_seconds` on its `Weapon` component)
 put the shield on a 100-tick cooldown and force it down.
 
@@ -140,26 +141,24 @@ Swords have `Weapon(1, 0.0F)` — no disable.
 
 ## Oracle scenarios
 
-1. `30_shield_raise_timing`: B holds shield from tick 0; A attacks on ticks
-   3, 5, 6. Expect: full damage ticks 3–5, zero damage + shield durability
-   -1 (floor(1+1)=2? recompute: damageBlocked=1 → <3 → 0 damage to item;
-   use a diamond sword: blocked 6 → floor(7)=7? no: floor(1+6)=7) — pick
-   damage values that show the item-damage threshold. Trace: `blocked`,
-   `damageBlocked`, shield durability, B velocity.
-2. `31_shield_arc`: B raises shield facing A (yaw 180), A attacks; then B
+1. `40_shield_raise_timing`: B holds shield from tick 0; A attacks with a
+   diamond sword on ticks 3, 5 and 6. Expect: full 7.0 damage on ticks 3–5
+   (shield still raising), zero damage from tick 6 on (5 ticks elapsed).
+   Trace: `blocked`, `damageBlocked`, shield durability, B velocity.
+2. `41_shield_arc`: B raises shield facing A (yaw 180), A attacks; then B
    yaw 90 (side-on), A attacks. Expect full block then full damage. Trace the
    computed angle.
-3. `32_shield_partial_knockback`: (needs a way to deal partial damage —
-   e.g. an axe with high damage vs shield? blocking reduces to 0 always for
-   the shield's reduction list; partial happens with custom reductions —
-   mark as harness-only) — alternatively verify the defender shove: not
-   applicable when fully blocked. Keep as open.
-4. `33_axe_disable`: B shield raised; A hits with diamond axe. Expect: 0
+3. `42_shield_partial_knockback`: not testable with a vanilla shield — its
+   `DamageReduction` is all-or-nothing (`base 0.0F, factor 1.0F`), so a
+   partial block never occurs. The defender-shove path
+   (`blockedByItem` → 0.5 knockback when not fully blocked) only matters for
+   custom `damage_reductions`.
+4. `43_axe_disable`: B shield raised; A hits with diamond axe. Expect: 0
    damage, shield on 100-tick cooldown, B stops using item; A attacks again
    20 ticks later → full damage (cooldown still active).
-5. `34_shield_vs_sword`: diamond sword vs raised shield: 0 damage, no
-   cooldown, shield durability floor(1+6)=7 → 336-7.
-6. `35_shield_projectile_arc`: arrow from the front vs raised shield
+5. `44_shield_vs_sword`: diamond sword vs raised shield: 0 damage, no
+   cooldown, shield durability −8 (`floor(1.0F + 7.0F)` for the blocked 7.0 damage).
+6. `45_shield_projectile_arc`: arrow from the front vs raised shield
    (phase 3, placeholder): blocked, no `blockUsingItem` knockback (projectiles
    skip it), `dealDefaultKnockback` uses the arrow's
    `calculateHorizontalHurtKnockbackDirection` unless fully blocked.

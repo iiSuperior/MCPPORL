@@ -166,18 +166,18 @@ see open questions. Unbreaking modifies it via
 
 ## Oracle scenarios
 
-1. `40_sword_damage_ladder`: A with each sword material, full cooldown, hits
+1. `50_sword_damage_ladder`: A with each sword material, full cooldown, hits
    on B at 20 health. Expect 3/4/4/5/3/6/7 damage.
-2. `41_axe_disable_timing`: covered in shield.md scenario 33; add a
+2. `51_axe_disable_timing`: covered in shield.md scenario 43; add a
    same-tick case: B raises shield the same tick A's axe packet arrives —
    documents the 5-tick raise vs packet order.
-3. `42_sweep`: A with diamond sword surrounded by B and C (C within 3 blocks,
+3. `52_sweep`: A with diamond sword surrounded by B and C (C within 3 blocks,
    not targeted). Full-strength hit on B → C takes
    `(1.0 + ratio·6.0) * enchant…` damage with knockback away from A's facing.
    New trace fields: sweep targets, per-target damage.
-4. `43_weak_hit`: attack at ~50% strength → damage ×(0.2+0.8·0.25)=×0.4,
+4. `53_weak_hit`: attack at ~50% strength → damage ×(0.2+0.8·0.25)=×0.4,
    no sweep, no sprint knockback.
-5. `44_attack_speed`: wooden axe (0.8 → 25-tick cooldown) vs diamond sword
+5. `54_attack_speed`: wooden axe (0.8 → 25-tick cooldown) vs diamond sword
    (12.5): second click timing and resulting `attackStrengthScale` in trace.
 
 ## Open questions

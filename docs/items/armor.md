@@ -123,16 +123,16 @@ changes sync via the normal inventory/equipment packets.
 
 ## Oracle scenarios
 
-1. `50_armor_values`: B in full diamond vs full iron vs none; A diamond sword
+1. `60_armor_values`: B in full diamond vs full iron vs none; A diamond sword
    full-strength. Expect per-hit damage 6→(armor 20, tough 8: 6·(1−0.76)) etc.
    — compute exact expectations from the formula in the scenario file.
-2. `51_armor_durability`: 10 diamond-sword hits on full diamond; trace each
+2. `61_armor_durability`: 10 diamond-sword hits on full diamond; trace each
    piece's durability (−max(1, 6/4)=−1 per hit… note damage/4 uses the
    pre-armor damage).
-3. `52_netherite_kb`: full netherite on B; sprint hit. Expect knockback ×0.6.
-4. `53_breach`: (needs breach enchant — data exists in 26.3: `density`/`breach`
+3. `62_netherite_kb`: full netherite on B; sprint hit. Expect knockback ×0.6.
+4. `63_breach`: (needs breach enchant — data exists in 26.3: `density`/`breach`
    are mace enchantments; scenario is a stretch goal) — placeholder.
-5. `54_protection_stacking`: B with protection IV on all pieces (EPF 16):
+5. `64_protection_stacking`: B with protection IV on all pieces (EPF 16):
    verify the `getDamageAfterMagicAbsorb` step multiplies after armor.
 
 New trace fields: `armorValue`, `armorToughness`, per-piece durability,

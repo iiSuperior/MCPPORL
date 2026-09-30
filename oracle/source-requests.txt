@@ -12,7 +12,7 @@ net.minecraft.server.level.ChunkMap isChunkTracked updatePlayer updatePlayers
 net.minecraft.server.network.PlayerChunkSender :all
 net.minecraft.server.level.ServerLevel :grep=getChunkSource\(\)\.tick|entityTickList\.forEach|tickNonPassenger\(
 
-# Batch 25: items research, phase 2 — item and component data (discovery).
+# Batch 26: items research, phase 2 — item and component data (discovery).
 # Decompiled with the same pipeline as vanilla-source.yml (26.3 client jar,
 # vineflower 1.12.0, tools/extract_methods.py). Findings in docs/items/*.md.
 net.minecraft.core.component.DataComponents :grep=ATTACK_DAMAGE|ATTACK_SPEED|ATTACK_RANGE|MINIMUM_ATTACK_CHARGE|PIERCING_WEAPON|ATTACK_ANIMATION|BLOCKS_ATTACKS|WEAPON|FOOD|CONSUMABLE
@@ -29,7 +29,7 @@ net.minecraft.world.item.Items :grep=GOLDEN_APPLE|ENCHANTED_GOLDEN_APPLE|TOTEM_O
 net.minecraft.world.item.Consumable :all
 net.minecraft.world.food.FoodProperties :all
 
-# Batch 26: items research, phase 2 — entity/damage/effect/enchantment logic (discovery).
+# Batch 27: items research, phase 2 — entity/damage/effect/enchantment logic (discovery).
 net.minecraft.world.entity.LivingEntity isBlocking getBlockingItem checkTotemDeathProtection hurtArmor getAbsorptionAmount setAbsorptionAmount startUsingItem completeUsingItem getUseItemRemainingTicks isUsingItem hurt actuallyHurt resolveBlockedDamage disableBlockingForSeconds knockback
 net.minecraft.world.entity.LivingEntity :grep=locking|lockAngle|Blocked
 net.minecraft.world.entity.LivingEntity :grep=[Uu]singItem
@@ -43,7 +43,7 @@ net.minecraft.world.item.enchantment.EnchantmentHelper :signatures modifyKnockba
 net.minecraft.world.item.enchantment.Enchantments :fields
 net.minecraft.world.entity.ai.attributes.Attributes :grep=ATTACK_DAMAGE|ATTACK_SPEED|ARMOR|ARMOR_TOUGHNESS|KNOCKBACK_RESISTANCE
 
-# Batch 27: items research phase 2 — deep dives (full bodies).
+# Batch 28: items research phase 2 — deep dives (full bodies).
 net.minecraft.world.entity.LivingEntity hurtOrSimulate applyItemBlocking blockUsingItem blockedByItem getItemBlockingWith getDamageAfterArmorAbsorb getDamageAfterMagicAbsorb
 net.minecraft.world.entity.LivingEntity :grep=MobEffects.RESISTANCE|FIRE_RESISTANCE
 net.minecraft.world.entity.player.Player getWeaponItem createAttackSource getEnchantedDamage baseDamageScaleFactor isSweepAttack doSweepAttack getKnockback postPiercingAttack hurtArmor cannotAttack canCriticalAttack
@@ -69,7 +69,7 @@ net.minecraft.world.effect.PoisonMobEffect :all
 net.minecraft.world.effect.AbsorptionMobEffect :all
 net.minecraft.world.item.enchantment.Enchantment modifyDamage modifyKnockback modifyDamageProtection modifyArmorEffectiveness
 
-# Batch 28: items research phase 2 — remaining gaps.
+# Batch 29: items research phase 2 — remaining gaps.
 net.minecraft.world.entity.Entity hurtOrSimulate
 net.minecraft.world.entity.LivingEntity postPiercingAttack doHurtEquipment getWeaponItem getAttackRangeWith tickEffects
 net.minecraft.world.entity.LivingEntity :grep=shouldApplyEffectTickThisTick
