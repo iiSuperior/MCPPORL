@@ -2,8 +2,8 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 17: attack key handling (does releasing the key clear missTime?) and block taps.
-net.minecraft.client.Minecraft handleKeybinds continueAttack
-net.minecraft.client.multiplayer.MultiPlayerGameMode startDestroyBlock continueDestroyBlock stopDestroyBlock sameDestroyTarget
-net.minecraft.network.protocol.game.ServerboundPlayerActionPacket :signatures
-net.minecraft.client.KeyMapping consumeClick isDown click setDown
+# Batch 18: what dying does in the killing tick.
+net.minecraft.world.entity.LivingEntity die isDeadOrDying isImmobile tickDeath checkTotemDeathProtection
+net.minecraft.world.entity.player.Player die isImmobile
+net.minecraft.server.level.ServerPlayer die
+net.minecraft.server.network.ServerGamePacketListenerImpl markClientUnloadedAfterDeath hasClientLoaded :grep=hasClientLoaded|clientLoaded

@@ -200,6 +200,9 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
     out = ClientPackets{};
     me.sentAttack = false;
     Player& cp = me.client;
+    // A human camera cannot look past straight up or down (Entity.turn clamps);
+    // the fairness gate guarantees it, so anything else is a bug upstream.
+    if (!(in.pitch >= -90.0F && in.pitch <= 90.0F) || !(in.yaw == in.yaw)) cp.unsupported = true;
     cp.yRot = in.yaw;
     cp.xRot = in.pitch;
     PickView view{cp.xo, cp.yo, cp.zo, cp.x, cp.y, cp.z, CombatConstants::kEyeHeightStanding, cp.xRot, cp.yRot,
