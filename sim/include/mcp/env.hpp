@@ -44,6 +44,8 @@ struct EnvConfig {
 // jump, sprint, click (0 or 1, a tap), then the turn this tick in degrees
 // (yaw, pitch; the fairness cap still applies).
 constexpr int32_t kActionSize = 7;
+// Expert-panel cheats for scripted opponents (BatchEnv::tactician).
+constexpr uint32_t kCheatSnapAim = 1, kCheatTrueSight = 2, kCheatRangeHit = 4;
 constexpr int32_t kObsSize = 34;
 // Per finished episode: winner (-1 draw), ticks, truncated, then per slot the counters
 // of EpisodeStats::Slot, in order.
@@ -97,6 +99,18 @@ struct BatchEnv {
     // Recording: per recorded duel, the gated inputs of both slots per tick.
     // recording[i]: 0 off, 1 recording the current episode, 2 episode kept.
     std::vector<uint8_t> recording;
+    // Scripted-opponent cheats requested for the next step, per slot
+    // (kCheat* bits, set by scripted()), and whether the recorded episode of
+    // a duel used one that vanilla cannot replay.
+    std::vector<uint8_t> cheats;
+    std::vector<uint8_t> recordedCheat;
+    // Tactician state per slot (see tactician()).
+    struct Tactic {
+        int32_t strafeDir = 1, strafeTicks = 0, jumpCooldown = 0, attackCooldown = 0, critFallTicks = 0;
+        bool wtap = false;
+        bool critPhase = false;  // going for a crit: sprint dropped until the swing
+    };
+    std::vector<Tactic> tactics;
     std::vector<std::vector<DuelInput>> recorded;  // [2 * n]
     std::vector<DuelStart> recordedStarts;         // [2 * n], the recorded episode's starts
     std::vector<uint8_t> recordedDone;             // the recorded episode finished (not truncated)
@@ -104,7 +118,7 @@ struct BatchEnv {
 
     BatchEnv(int32_t n, uint64_t seed, std::vector<float> table, const EnvConfig& c)
         : cfg(c), world{-60, c.arenaRadius, 4}, sinTab(std::move(table)), duels(n), rewards(n), ticks(n, 0), stats(n), starts(2 * n), rng{seed},
-          recording(n, 0), recorded(2 * n), recordedStarts(2 * n), recordedDone(n, 0),
+          recording(n, 0), cheats(2 * n, 0), recordedCheat(n, 0), tactics(2 * n), recorded(2 * n), recordedStarts(2 * n), recordedDone(n, 0),
           recordedNonParity(n, 0) {
         for (int32_t i = 0; i < n; ++i) resetDuel(i);
     }
@@ -145,6 +159,8 @@ struct BatchEnv {
         rewards[i].reset(duels[i]);
         ticks[i] = 0;
         stats[i] = EpisodeStats{};
+        tactics[2 * i] = Tactic{};
+        tactics[2 * i + 1] = Tactic{};
         starts[2 * i] = a;
         starts[2 * i + 1] = b;
         if (recording[i] == 1) {  // a new episode to record
@@ -152,6 +168,7 @@ struct BatchEnv {
             recorded[2 * i + 1].clear();
             recordedStarts[2 * i] = a;
             recordedStarts[2 * i + 1] = b;
+            recordedCheat[i] = 0;
         }
     }
 
@@ -250,7 +267,20 @@ struct BatchEnv {
             DuelInput in[2];
             for (int32_t k = 0; k < 2; ++k) {
                 AgentAction act = decode(d.p[k], actions + (2 * i + k) * kActionSize);
-                in[k] = applyFairness(cfg.caps, d.p[k].client.yRot, d.p[k].client.xRot, d.p[k].lastAttackHeld, act, fairness);
+                uint8_t cheat = cheats[2 * i + k];
+                cheats[2 * i + k] = 0;
+                if (cheat & kCheatSnapAim) {
+                    // Expert panel: no turn cap (the opponent's own input path only).
+                    FairnessCaps free{360.0F};
+                    FairnessStats ignore;
+                    in[k] = applyFairness(free, d.p[k].client.yRot, d.p[k].client.xRot, d.p[k].lastAttackHeld, act, ignore);
+                } else {
+                    in[k] = applyFairness(cfg.caps, d.p[k].client.yRot, d.p[k].client.xRot, d.p[k].lastAttackHeld, act, fairness);
+                }
+                if (cheat & kCheatRangeHit) {
+                    in[k].rangeHit = true;
+                    if (recording[i] == 1) recordedCheat[i] = 1;
+                }
                 if (recording[i] == 1) recorded[2 * i + k].push_back(in[k]);
             }
             float before[2] = {d.p[0].server.health, d.p[1].server.health};
@@ -316,7 +346,7 @@ struct BatchEnv {
                 }
                 if (recording[i] == 1) {
                     recordedDone[i] = dead ? 1 : 0;  // replays end at a death; an arena exit just stops
-                    recordedNonParity[i] = d.nonParityEvents() + (d.unsupported() ? 1000 : 0);
+                    recordedNonParity[i] = d.nonParityEvents() + (d.unsupported() ? 1000 : 0) + (recordedCheat[i] ? 2000 : 0);
                     recording[i] = 2;  // keep this episode; stop recording
                 }
                 resetDuel(i);
@@ -353,6 +383,106 @@ struct BatchEnv {
         float delay = attackStrengthDelay(me.server.weapon);
         float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
         a[4] = (r.canHit() && strength >= 1.0F && m < 6.0F) ? 1.0F : 0.0F;
+    }
+
+    // The tactician: a port of the melee tactics of the public-domain Fabric mod
+    // "PvP Bot" (github.com/Stepan1411/PVP-bot-fabric, BotCombat and
+    // BotNavigation): sprint in with a bunny-hop jump every 10 ticks, strafe
+    // within 6 blocks (switching every 8-18 ticks), swing only at full attack
+    // strength and then wait 10 ticks, crit by dropping sprint, jumping and
+    // swinging on the 3rd falling tick, W-tap (one tick without sprint) after
+    // each swing. It aims
+    // at the eyes of the target with `noiseDeg` of jitter, turning at most
+    // `turnDeg` per tick, and plays fair unless `cheatFlags` say otherwise:
+    //   kCheatSnapAim:  no turn cap (the mod sets its rotation directly);
+    //   kCheatTrueSight: aims at the opponent's true position, not the view;
+    //   kCheatRangeHit: a swing lands whenever the true hitbox is in reach,
+    //                   without the crosshair pick (the mod calls attack()).
+    // The mod's grounded crits (it sets fallDistance) are left out on purpose:
+    // they would teach the learner that crits need no jump. Cheats only ever
+    // change the opponent's own inputs; the learner always plays fair.
+    void tactician(int32_t i, int32_t k, float noiseDeg, float turnDeg, uint32_t cheatFlags, bool crits, float* a) {
+        const Duel& d = duels[i];
+        const DuelPlayer& me = d.p[k];
+        const Player& c = me.client;
+        Tactic& T = tactics[2 * i + k];
+        for (int32_t j = 0; j < kActionSize; ++j) a[j] = 0.0F;
+        bool trueSight = (cheatFlags & kCheatTrueSight) != 0;
+        const Player& op = d.p[1 - k].client;
+        Vec3 target = trueSight ? Vec3{op.x, op.y, op.z} : me.view.pos;
+        AABB box = trueSight ? op.boundingBox() : duel::viewBox(me.view);
+        // Aim at the eyes.
+        float yaw, pitch;
+        env::aimAt(env::eyeOf(c), Vec3{target.x, target.y + 1.62, target.z}, yaw, pitch);
+        yaw += static_cast<float>((uniform() - 0.5) * 2.0) * noiseDeg;
+        pitch += static_cast<float>((uniform() - 0.5) * 2.0) * noiseDeg;
+        float dy = duel::wrapDegrees(yaw - c.yRot), dp = pitch - c.xRot;
+        float m = std::sqrt(dy * dy + dp * dp);
+        bool snap = (cheatFlags & kCheatSnapAim) != 0;
+        if (!snap && m > turnDeg) {
+            dy *= turnDeg / m;
+            dp *= turnDeg / m;
+        }
+        a[5] = dy;
+        a[6] = dp;
+        cheats[2 * i + k] = static_cast<uint8_t>(cheatFlags & (kCheatSnapAim | kCheatRangeHit));
+        if (T.jumpCooldown > 0) T.jumpCooldown--;
+        if (T.attackCooldown > 0) T.attackCooldown--;
+        double hx = target.x - c.x, hz = target.z - c.z;
+        double dist = std::sqrt(hx * hx + hz * hz);
+        // Movement (BotNavigation.moveTowardPos, combat mode).
+        a[0] = 1.0F;
+        bool sprint = true;
+        if (T.wtap && c.onGround) {  // W-tap: one grounded tick without sprint
+            sprint = false;
+            T.wtap = false;
+        }
+        a[3] = sprint ? 1.0F : 0.0F;
+        if (dist < 6.0) {
+            if (T.strafeTicks <= 0) {
+                T.strafeDir = -T.strafeDir;
+                T.strafeTicks = 8 + static_cast<int32_t>(uniform() * 11.0);
+            }
+            T.strafeTicks--;
+            a[1] = static_cast<float>(T.strafeDir);
+        }
+        if (dist > 3.5 && c.onGround && T.jumpCooldown <= 0) {  // bunny hop while closing in
+            a[2] = 1.0F;
+            T.jumpCooldown = 10;
+        }
+        // Melee (BotCombat: full attack strength, own 10-tick gap, crits).
+        Vec3 eye = env::eyeOf(c);
+        bool inReach = reach::inRange(reach::eyeToBox(eye, box));
+        float delay = attackStrengthDelay(me.server.weapon);
+        float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
+        if (inReach && T.attackCooldown <= 0 && strength >= 1.0F) {
+            bool swing = false;
+            if (!crits) {
+                swing = true;
+            } else if (c.sprinting) {
+                // A crit needs the attacker not sprinting: release W for a tick
+                // (sprinting stops without forward input, in the air too).
+                a[0] = 0.0F;
+                a[3] = 0.0F;
+                T.critPhase = true;
+            } else if (c.onGround) {
+                a[2] = 1.0F;  // jump for the crit
+                T.critPhase = true;
+                T.critFallTicks = 0;
+            } else if (c.vel.y < 0.0) {
+                // Swing early in the fall: a jump only falls ~6 ticks on flat
+                // ground (the mod's 6 relies on faking fallDistance).
+                if (++T.critFallTicks >= 3) swing = true;
+            }
+            if (swing) {
+                a[4] = 1.0F;
+                T.attackCooldown = 10;
+                T.critFallTicks = 0;
+                T.wtap = true;
+                T.critPhase = false;
+            }
+        }
+        if (T.critPhase && !c.onGround) a[3] = 0.0F;  // no sprint key until the crit swing
     }
 
     // Record duel i's next episode from its start (the duel restarts now).

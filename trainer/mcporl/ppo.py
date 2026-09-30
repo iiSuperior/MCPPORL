@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 from .config import RewardConfig
-from .env import DuelEnv, slot_stats
+from .env import CHEAT_RANGE_HIT, CHEAT_SNAP_AIM, CHEAT_TRUE_SIGHT, DuelEnv, slot_stats
 
 # Heads: forward/back, left/right (3 each: -1, 0, 1), jump, sprint, click (2 each).
 CAT_SIZES = (3, 3, 2, 2, 2)
@@ -57,6 +57,18 @@ class PPOConfig:
     aim_dense: float = 0.05
     reach_dense: float = 0.05
     anneal: float = 0.6
+    # Start from a trained checkpoint (its policy and observation statistics).
+    init_checkpoint: str = ""
+    # Opponent mix of the duels that are not self-play: a share plays a past
+    # snapshot of the learner (a league: the initial checkpoint and a snapshot
+    # every `league_every` updates); the rest are scripted, split between the
+    # tactician (a port of the PvP Bot mod's melee), the expert panel (the
+    # tactician with opponent-only cheats: snap aim, true sight, range hit),
+    # the aim bot, and the dummy.
+    league: float = 0.0
+    league_every: int = 20
+    tactician: float = 0.0
+    expert: float = 0.0
 
 
 class RunningNorm:
@@ -127,18 +139,27 @@ def to_env_actions(c: np.ndarray, t: np.ndarray) -> np.ndarray:
 
 
 class Opponents:
-    """Which slots the learner plays, and what the scripted slots do."""
+    """Which slots the learner plays, and who plays the others.
+
+    Duel i is self-play for i < self_play * n (both slots learn); otherwise the
+    learner is slot i % 2 and, per episode, the other slot is drawn: a league
+    snapshot, or a scripted opponent (tactician, expert panel, aim bot,
+    dummy) with random skill."""
+
+    LEAGUE, DUMMY, AIM, TACT, EXPERT = 0, 1, 2, 3, 4
 
     def __init__(self, n: int, cfg: PPOConfig, rng: np.random.Generator):
         self.n = n
         self.learner = np.zeros(2 * n, bool)
-        # Per slot: 0 dummy, 1 aim bot (used on scripted slots only)
-        self.kind = np.zeros(2 * n, np.int32)
+        self.who = np.full(n, self.AIM, np.int32)
         self.noise = np.zeros(2 * n, np.float32)
         self.turn = np.zeros(2 * n, np.float32)
+        self.cheats = np.zeros(2 * n, np.uint32)
+        self.crits = np.zeros(2 * n, np.uint8)
         n_self = int(round(n * cfg.self_play))
+        self.self_play = np.arange(n) < n_self
         for i in range(n):
-            if i < n_self:
+            if self.self_play[i]:
                 self.learner[2 * i] = self.learner[2 * i + 1] = True
             else:
                 self.learner[2 * i + (i % 2)] = True
@@ -148,25 +169,69 @@ class Opponents:
             self.redraw(i)
 
     def redraw(self, i: int) -> None:
-        """A new opponent for duel i's next episode: a random skill level."""
+        """A new opponent for duel i's next episode."""
+        if self.self_play[i]:
+            return
+        c = self.cfg
+        if self.rng.random() < c.league:
+            self.who[i] = self.LEAGUE
+        else:
+            r = self.rng.random()
+            if r < c.tactician:
+                self.who[i] = self.TACT
+            elif r < c.tactician + c.expert:
+                self.who[i] = self.EXPERT
+            elif r < c.tactician + c.expert + c.dummy:
+                self.who[i] = self.DUMMY
+            else:
+                self.who[i] = self.AIM
         s = slice(2 * i, 2 * i + 2)
-        self.kind[s] = 0 if self.rng.random() < self.cfg.dummy else 1
-        self.noise[s] = self.rng.uniform(0.5, 12.0)
+        self.noise[s] = self.rng.uniform(0.5, 12.0) if self.who[i] != self.EXPERT else 0.0
         self.turn[s] = self.rng.uniform(6.0, 60.0)
+        self.crits[s] = self.rng.random() < 0.5
+        cheats = 0
+        if self.who[i] == self.EXPERT:
+            while cheats == 0:  # at least one cheat, any combination
+                cheats = int(self.rng.integers(0, 8))
+        self.cheats[s] = cheats
 
-    def fill(self, env: DuelEnv, actions: np.ndarray) -> None:
-        scripted = ~self.learner
-        if scripted.any():
-            env.scripted_each(scripted, self.kind, self.noise, self.turn, actions)
+    def fill(self, env: DuelEnv, actions: np.ndarray, obs_norm: np.ndarray, league: "Policy | None") -> None:
+        other = ~self.learner
+        who = np.repeat(self.who, 2)
+        aim = other & ((who == self.AIM) | (who == self.DUMMY))
+        if aim.any():
+            kind = np.where(who == self.DUMMY, 0, 1).astype(np.int32)
+            env.scripted_each(aim, kind, self.noise, self.turn, actions)
+        tact = other & ((who == self.TACT) | (who == self.EXPERT))
+        if tact.any():
+            env.tactician_each(tact, self.noise, self.turn, self.cheats, self.crits, actions)
+        past = other & (who == self.LEAGUE)
+        if past.any():
+            if league is None:
+                raise RuntimeError("league opponents need a league policy")
+            with torch.no_grad():
+                c, t, _, _ = league.act(torch.from_numpy(obs_norm[past]))
+            actions[past] = to_env_actions(c.numpy(), t.numpy())
+
+
+# Evaluation opponents: (kind, noise, turn, cheats, crits); kind "aim", "dummy" or "tact".
+# "expert" cheats (opponent only): report it apart from the fair ones.
+EVAL_OPPONENTS = {
+    "dummy": ("dummy", 0.0, 30.0, 0, 0),
+    "bot_easy": ("aim", 8.0, 12.0, 0, 0),
+    "bot_medium": ("aim", 4.0, 25.0, 0, 0),
+    "bot_hard": ("aim", 1.5, 45.0, 0, 0),
+    "tactician": ("tact", 1.5, 45.0, 0, 0),
+    "tactician_crits": ("tact", 1.5, 45.0, 0, 1),
+    "expert": ("tact", 0.0, 45.0, CHEAT_SNAP_AIM | CHEAT_TRUE_SIGHT | CHEAT_RANGE_HIT, 0),
+}
 
 
 def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, seed: int,
              frozen: Policy | None = None) -> dict:
     """Deterministic learner vs a fixed opponent, the learner on both sides equally.
 
-    opponent: "dummy", "bot_easy", "bot_medium", "bot_hard", or "frozen" (an earlier policy)."""
-    levels = {"dummy": (0, 0.0, 30.0), "bot_easy": (1, 8.0, 12.0), "bot_medium": (1, 4.0, 25.0),
-              "bot_hard": (1, 1.5, 45.0)}
+    opponent: a key of EVAL_OPPONENTS, or "frozen" (an earlier policy)."""
     n = cfg.eval_episodes  # one episode per duel: counting the first to finish would favour short ones
     env = DuelEnv(n, seed=seed, max_ticks=cfg.max_ticks, weapons=cfg.weapons, reward=cfg.reward)
     learner = np.zeros(2 * n, bool)
@@ -189,8 +254,13 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
         if opponent == "frozen":
             actions[~learner] = a_opp[~learner]
         else:
-            kind, noise, turn = levels[opponent]
-            env.scripted((~learner).astype(np.uint8), kind, noise, turn, actions)
+            kind, noise, turn, cheats, crits = EVAL_OPPONENTS[opponent]
+            mask = (~learner).astype(np.uint8)
+            if kind == "tact":
+                env.tactician_each(mask, np.full(2 * n, noise, np.float32), np.full(2 * n, turn, np.float32),
+                                   np.full(2 * n, cheats, np.uint32), np.full(2 * n, crits, np.uint8), actions)
+            else:
+                env.scripted(mask, 0 if kind == "dummy" else 1, noise, turn, actions)
         obs, _, done, stats = env.step(actions)
         for i in np.nonzero(done)[0]:
             if finished[i]:
@@ -230,6 +300,15 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     policy = Policy(env.obs_size, cfg.hidden)
     optim = torch.optim.Adam(policy.parameters(), lr=cfg.lr, eps=1e-5)
     norm = RunningNorm(env.obs_size)
+    league_pool: list[dict] = []
+    if cfg.init_checkpoint:
+        ck = torch.load(cfg.init_checkpoint, weights_only=False)
+        policy.load_state_dict(ck["policy"])
+        norm.mean, norm.var = np.array(ck["norm"]["mean"]), np.array(ck["norm"]["var"])
+        norm.count = float(ck["norm"]["count"])
+        league_pool.append({k: v.clone() for k, v in policy.state_dict().items()})
+    league_net = Policy(env.obs_size, cfg.hidden)
+    league_net.eval()
     gamma = cfg.reward.gamma
     (out_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=1, default=str))
     metrics = open(out_dir / "metrics.jsonl", "a")
@@ -244,6 +323,13 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     for update in range(1, cfg.updates + 1):
         aid = max(0.0, 1.0 - (update - 1) / max(cfg.anneal * cfg.updates, 1.0))
         env.set_reward(cfg.reward, cfg.aim_dense * aid, cfg.reach_dense * aid)
+        if cfg.league > 0.0:
+            if update % cfg.league_every == 1 or not league_pool:
+                league_pool.append({k: v.clone() for k, v in policy.state_dict().items()})
+                league_pool = league_pool[-10:]
+            # This rollout's league opponent: a random snapshot, recent ones favoured.
+            w = np.arange(1, len(league_pool) + 1, dtype=np.float64)
+            league_net.load_state_dict(league_pool[int(rng.choice(len(league_pool), p=w / w.sum()))])
         buf_obs = np.zeros((T, S, env.obs_size), np.float32)
         buf_c = np.zeros((T, S, len(CAT_SIZES)), np.int64)
         buf_t = np.zeros((T, S, 2), np.float32)
@@ -258,7 +344,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
                 c, t, logp, v = policy.act(torch.from_numpy(o))
             c, t = c.numpy(), t.numpy()
             actions[:] = to_env_actions(c, t)
-            opp.fill(env, actions)
+            opp.fill(env, actions, o, league_net if cfg.league > 0.0 else None)
             buf_obs[step], buf_c[step], buf_t[step] = o, c, t
             buf_logp[step], buf_v[step] = logp.numpy(), v.numpy()
             obs, r, done, stats = env.step(actions)
@@ -318,8 +404,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
                "turn_std_deg": (policy.log_std.exp() * TURN_SCALE).tolist(), "aid": aid}
         if update % cfg.eval_every == 0 or update == cfg.updates:
             policy.eval()
-            row["eval"] = [evaluate(policy, norm, cfg, o, seed=1000 + update)
-                           for o in ("dummy", "bot_easy", "bot_medium", "bot_hard")]
+            row["eval"] = [evaluate(policy, norm, cfg, o, seed=1000 + update) for o in EVAL_OPPONENTS]
             if snapshots:
                 frozen = Policy(env.obs_size, cfg.hidden)
                 frozen.load_state_dict(snapshots[0]["state"])
@@ -343,7 +428,7 @@ def summary(row: dict) -> str:
     s = (f"upd {row['update']:4d} samples {row['samples'] / 1e6:6.2f}M {row['seconds']:7.0f}s  "
          f"train win {row['train_win_rate']:.2f} dmg {row['train_damage']:5.1f} ent {row['entropy']:.2f}")
     for e in row.get("eval", []):
-        s += (f"\n    vs {e['opponent']:10s} win {e['win_rate']:.2f} draw {e['draw_rate']:.2f} "
+        s += (f"\n    vs {e['opponent']:15s} win {e['win_rate']:.2f} draw {e['draw_rate']:.2f} "
               f"hits/click {e['hits_per_click']:.2f} aim {e['aim_error_deg']:5.1f}deg "
               f"dmg {e['damage_dealt']:5.1f}/{e['damage_taken']:5.1f} adv {e['advantage_share']:.2f}")
     return s

@@ -29,6 +29,8 @@ WEAPONS = ["hand", "wooden_sword", "stone_sword", "copper_sword", "iron_sword", 
 SLOT_STATS = ["clicks", "attacks", "hits", "damage_dealt", "damage_taken", "aim_error_sum", "aim_ticks",
               "advantage_ticks", "disadvantage_ticks"]
 
+CHEAT_SNAP_AIM, CHEAT_TRUE_SIGHT, CHEAT_RANGE_HIT = 1, 2, 4
+
 _F = ctypes.POINTER(ctypes.c_float)
 _U8 = ctypes.POINTER(ctypes.c_uint8)
 
@@ -57,6 +59,7 @@ def _load() -> ctypes.CDLL:
     lib.mcp_env_scripted.argtypes = [ctypes.c_void_p, _U8, ctypes.c_int, ctypes.c_float, ctypes.c_float, _F]
     _I32 = ctypes.POINTER(ctypes.c_int32)
     lib.mcp_env_scripted_each.argtypes = [ctypes.c_void_p, _U8, _I32, _F, _F, _F]
+    lib.mcp_env_tactician_each.argtypes = [ctypes.c_void_p, _U8, _F, _F, ctypes.POINTER(ctypes.c_uint32), _U8, _F]
     lib.mcp_env_record.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.mcp_env_record_state.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.mcp_env_record_nonparity.argtypes = [ctypes.c_void_p, ctypes.c_int]
@@ -145,6 +148,20 @@ class DuelEnv:
         tr = np.ascontiguousarray(turn_deg, dtype=np.float32)
         lib().mcp_env_scripted_each(self._h, _p(m, _U8), k.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)), _p(nz, _F),
                                     _p(tr, _F), _p(out, _F))
+        return out
+
+    def tactician_each(self, mask: np.ndarray, noise_deg: np.ndarray, turn_deg: np.ndarray, cheats: np.ndarray,
+                       crits: np.ndarray, out: np.ndarray) -> np.ndarray:
+        """Tactician opponents (a port of the PvP Bot mod's melee) for the masked slots.
+
+        cheats: per-slot bits CHEAT_SNAP_AIM | CHEAT_TRUE_SIGHT | CHEAT_RANGE_HIT (opponent only)."""
+        m = np.ascontiguousarray(mask, dtype=np.uint8)
+        nz = np.ascontiguousarray(noise_deg, dtype=np.float32)
+        tr = np.ascontiguousarray(turn_deg, dtype=np.float32)
+        ch = np.ascontiguousarray(cheats, dtype=np.uint32)
+        cr = np.ascontiguousarray(crits, dtype=np.uint8)
+        lib().mcp_env_tactician_each(self._h, _p(m, _U8), _p(nz, _F), _p(tr, _F),
+                                     ch.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)), _p(cr, _U8), _p(out, _F))
         return out
 
     def record(self, i: int) -> None:

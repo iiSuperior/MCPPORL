@@ -55,6 +55,10 @@ struct DuelInput {
     bool attack = false;
     bool attackHeld = false;
     float yaw = 0.0F, pitch = 0.0F;
+    // Scripted-opponent cheat (never set for a learner, never in oracle
+    // scenarios): a click lands whenever the opponent's true hitbox is within
+    // entity reach, without the crosshair pick. See env.hpp, expert panel.
+    bool rangeHit = false;
 };
 
 // ServerboundMovePlayerPacket (Pos, PosRot, Rot, StatusOnly).
@@ -237,6 +241,16 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
     PickView view{cp.xo, cp.yo, cp.zo, cp.x, cp.y, cp.z, CombatConstants::kEyeHeightStanding, cp.xRot, cp.yRot,
                   cp.boundingBox()};
     me.pick = clientPick(view, target, w, sinTab);
+    if (in.rangeHit && me.pick.type != HitType::Entity) {
+        // Cheat: resolve the click against the box's nearest point instead of the ray.
+        double ex = pick::lerp(1.0, cp.xo, cp.x), ey = pick::lerp(1.0, cp.yo, cp.y) + static_cast<double>(view.eyeHeight),
+               ez = pick::lerp(1.0, cp.zo, cp.z);
+        double nx = mth::clamp(ex, target.minX, target.maxX), ny = mth::clamp(ey, target.minY, target.maxY),
+               nz = mth::clamp(ez, target.minZ, target.maxZ);
+        double dd = (nx - ex) * (nx - ex) + (ny - ey) * (ny - ey) + (nz - ez) * (nz - ez);
+        double r = static_cast<double>(PickConstants::kEntityInteractionRange);
+        if (dd < r * r) me.pick = HitResult{HitType::Entity, Vec3{nx, ny, nz}};
+    }
     me.pickFrom = Vec3{pick::lerp(1.0, cp.xo, cp.x), pick::lerp(1.0, cp.yo, cp.y) + static_cast<double>(view.eyeHeight),
                        pick::lerp(1.0, cp.zo, cp.z)};
     me.tickCount++;
@@ -684,7 +698,10 @@ struct Duel {
         // entities: itself first, then the remote player (ClientLevel's tick
         // list is in insertion order).
         for (int32_t i = 0; i < 2; ++i) {
-            duel::clientTick(p[i], i == 0 ? a : b, duel::viewBox(p[i].view), w, sinTab);
+            const DuelInput& in = i == 0 ? a : b;
+            // A range-hit cheat aims at the true position; everyone else at their view.
+            AABB target = in.rangeHit ? p[1 - i].client.boundingBox() : duel::viewBox(p[i].view);
+            duel::clientTick(p[i], in, target, w, sinTab);
             p[i].view.clientTick();
         }
         // Server: each client's packets in send order, then one server tick.

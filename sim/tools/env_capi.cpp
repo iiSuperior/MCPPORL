@@ -67,6 +67,15 @@ void mcp_env_scripted_each(void* h, const unsigned char* mask, const int* kind, 
         if (mask[s]) e->scripted(s / 2, s % 2, kind[s], noiseDeg[s], turnDeg[s], actions + s * kActionSize);
 }
 
+// Tactician opponents for every masked slot ([2n] arrays; flags: kCheat* bits,
+// crits: 0/1). See BatchEnv::tactician.
+void mcp_env_tactician_each(void* h, const unsigned char* mask, const float* noiseDeg, const float* turnDeg,
+                            const unsigned* flags, const unsigned char* crits, float* actions) {
+    BatchEnv* e = static_cast<BatchEnv*>(h);
+    for (int s = 0; s < 2 * e->size(); ++s)
+        if (mask[s]) e->tactician(s / 2, s % 2, noiseDeg[s], turnDeg[s], flags[s], crits[s] != 0, actions + s * kActionSize);
+}
+
 void mcp_env_record(void* h, int i) { static_cast<BatchEnv*>(h)->record(i); }
 
 // 0 not recording, 1 in progress, 2 finished (by a death), 3 truncated.
