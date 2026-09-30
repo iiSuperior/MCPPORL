@@ -1,8 +1,8 @@
 # Combat scenarios
 
 Two-player scripts for the combat oracle. Same keys as `oracle/scenarios`,
-plus `attack` (one click on that tick, aimed at the other player). Each
-segment line gives a tick count, then player A's inputs, `|`, player B's:
+plus the attack key. Each segment line gives a tick count, then player A's
+inputs, `|`, player B's:
 
 ```
 start A x=0.5 z=0.5 yaw=0        # optional placement per player
@@ -12,9 +12,20 @@ start B x=0.5 z=3.0 yaw=180
 30 idle | idle                   # watch the knockback play out
 ```
 
-`yaw=` on a segment is the rotation the client *sends* at the end of each of
-those ticks. The server evaluates an attack with the rotation sent on the
-previous tick, which is what the 180-hit scenario exercises.
+Attack tokens (the key is released on ticks that have none of them):
+
+- `attack`: a click, key still down when the tick samples it;
+- `tap`: a click, key already released;
+- `hold`: key down, no new click.
+
+A click is resolved like the vanilla client: the crosshair pick decides
+whether it attacks, whiffs or taps a block (see docs/ARCHITECTURE.md,
+"Input plausibility").
+
+`yaw=`/`pitch=` on a segment is the rotation during each of those ticks: it is
+used by the pick, the movement and the rotation packet sent at the end of the
+tick. The server evaluates an attack with the rotation sent on the previous
+tick, which is what the 180-hit scenario exercises.
 
 ## Golden results (26.3)
 
@@ -25,7 +36,7 @@ after the hit; "displacement" is B's z-change over that tick.
 |---|---|---|---|
 | `10_hit_standing` | Plain hit | 1.0 | vz 0.2184 (0.4 before friction), vy 0.2752 |
 | `11_sprint_hit` | Sprint hit adds extra knockback | 1.0 | 0.7 displacement, vy 0.3136 |
-| `12_crit` | Falling hit at full attack strength | **1.5** | same as a plain hit |
+| `12_crit` | Falling hit at full attack strength; aimed 20 degrees down (a level crosshair passes over B's head) | **1.5** | same as a plain hit |
 | `13_180_sprint_hit` | Extra knockback uses the attacker's server yaw: B pulled **toward** A | 1.0 | 0.3 toward A |
 | `14_invulnerability` | Second hit 5 ticks later: no damage, no knockback | 1.0 + 0 | none |
 | `15_wtap` | W-tap restores sprint: the second hit is a sprint hit again | 1.0 each | 0.7 both |
@@ -37,7 +48,14 @@ after the hit; "displacement" is B's z-change over that tick.
 | `21_partial_strength` | Attack strength 0.5: damage x(0.2 + 0.8 x 0.5^2), no sprint knockback | 0.4 | as standing |
 | `22_release_after_hit` | The server echoes the removed sprint speed to A's client: A strafes at walk speed | 1.0 | 0.7 |
 
-Natural health regeneration is off in the oracle (it depends on hunger).
+| `23_whiff` | Whiff, then a click every tick with the key held: all eaten for 9 ticks | 1.0 on the 10th | as standing |
+| `24_look_away` | Click facing away: whiff; release, flick back, click: hits, but the whiff's punch halved the cooldown | 0.4 | as standing |
+| `25_aim_edge` | 8 degrees off-centre misses by a centimetre, 5 degrees hits (one tick after the whiff's punch) | 0.27 | as standing |
+| `26_ground_click` | Clicking the ground punches too: the next hit is at half strength | 0.4 | as standing |
+
+Every combat trace also records each tick's crosshair pick (type and hit
+location) and `missTime`. Natural health regeneration is off in the oracle
+(it depends on hunger).
 
 Two traps found while building these, both harness artifacts rather than
 vanilla behaviour:

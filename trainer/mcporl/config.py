@@ -40,9 +40,20 @@ class FairnessCaps:
     """Input plausibility policy (docs/ARCHITECTURE.md). Contract: the policy
     learns to act within these caps, so changing them needs retraining."""
 
-    require_aim_to_hit: bool = True
+    require_aim_to_hit: bool = True     # structural in the simulator: clicks go through the client's pick
     max_turn_deg_per_tick: float = 200.0
-    max_clicks_per_tick: int = 1
+    max_clicks_per_tick: int = 1        # the simulator's action carries at most one click
+
+    def __post_init__(self) -> None:
+        # sim/include/mcp/fairness.hpp implements exactly these; anything else
+        # would train a policy under rules the simulator does not enforce.
+        if not self.require_aim_to_hit:
+            raise ValueError("require_aim_to_hit=False is not supported: the simulator resolves every click "
+                             "with the vanilla client's crosshair pick")
+        if self.max_clicks_per_tick != 1:
+            raise ValueError("max_clicks_per_tick must be 1 (one click per tick is built into the action)")
+        if not 0.0 < self.max_turn_deg_per_tick <= 360.0:
+            raise ValueError(f"max_turn_deg_per_tick={self.max_turn_deg_per_tick} must be in (0, 360]")
 
 
 @dataclass(frozen=True)

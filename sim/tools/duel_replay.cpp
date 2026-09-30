@@ -54,7 +54,9 @@ DuelInput parseInput(const std::string& spec, float& yaw, float& pitch, const st
         else if (t == "jump") in.keys.jump = true;
         else if (t == "sneak") in.keys.shift = true;
         else if (t == "sprint") in.keys.sprint = true;
-        else if (t == "attack") in.attack = true;
+        else if (t == "attack") in.attack = in.attackHeld = true;
+        else if (t == "tap") in.attack = true;
+        else if (t == "hold") in.attackHeld = true;
         else if (t != "idle") fail(where, "unknown token " + t);
     }
     in.yaw = yaw;
@@ -138,9 +140,10 @@ const char* tf(bool v) { return v ? "true" : "false"; }
 void writeInput(std::FILE* out, const DuelInput& in) {
     std::fprintf(out,
                  "{\"W\": %s, \"S\": %s, \"A\": %s, \"D\": %s, \"jump\": %s, \"sneak\": %s, \"sprint\": %s, "
-                 "\"attack\": %s, \"yaw\": \"%08" PRIx32 "\", \"pitch\": \"%08" PRIx32 "\"}",
+                 "\"attack\": %s, \"attackHeld\": %s, \"yaw\": \"%08" PRIx32 "\", \"pitch\": \"%08" PRIx32 "\"}",
                  tf(in.keys.forward), tf(in.keys.backward), tf(in.keys.left), tf(in.keys.right), tf(in.keys.jump),
-                 tf(in.keys.shift), tf(in.keys.sprint), tf(in.attack), j::fbits(in.yaw), j::fbits(in.pitch));
+                 tf(in.keys.shift), tf(in.keys.sprint), tf(in.attack), tf(in.attackHeld), j::fbits(in.yaw),
+                 j::fbits(in.pitch));
 }
 
 void writeState(std::FILE* out, const DuelPlayer& d) {

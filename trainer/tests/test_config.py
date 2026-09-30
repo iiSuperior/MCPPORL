@@ -9,6 +9,14 @@ class ConfigTest(unittest.TestCase):
     def test_defaults_are_deployable(self):
         self.assertEqual(check_deployable(ContractConfig(), RuntimeConfig()), [])
 
+    def test_fairness_caps_the_simulator_cannot_enforce_are_rejected(self):
+        with self.assertRaises(ValueError):
+            FairnessCaps(require_aim_to_hit=False)
+        with self.assertRaises(ValueError):
+            FairnessCaps(max_clicks_per_tick=2)
+        with self.assertRaises(ValueError):
+            FairnessCaps(max_turn_deg_per_tick=0.0)
+
     def test_runtime_change_within_trained_range_is_fine(self):
         self.assertEqual(check_deployable(ContractConfig(), RuntimeConfig(latency_base_ms=240)), [])
 

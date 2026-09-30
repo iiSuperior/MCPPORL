@@ -37,13 +37,18 @@ struct CombatConstants {
     static constexpr double kSafeFallDistance = 3.0;
 };
 
-// Inputs for one player on one tick (CombatScenario.Input). `attack` is a
-// click: what it does is decided by the client's crosshair pick, as in vanilla.
-// yaw/pitch are the rotation during the tick (the mouse moves between ticks),
-// used by the pick, the movement and the rotation sent at the end of the tick.
+// Inputs for one player on one tick (CombatScenario.Input).
+//   attack:     the attack key was pressed since the last tick (a click). What
+//               it does is decided by the crosshair pick, as in vanilla.
+//   attackHeld: the key is down when the tick samples it (Minecraft.
+//               continueAttack). Releasing it clears the whiff lockout;
+//               holding it on a block mines.
+//   yaw/pitch:  the rotation during the tick (the mouse moves between ticks),
+//               used by the pick, the movement and the rotation packet.
 struct DuelInput {
     Keys keys{};
     bool attack = false;
+    bool attackHeld = false;
     float yaw = 0.0F, pitch = 0.0F;
 };
 
@@ -60,7 +65,8 @@ struct MovePacket {
 // then ServerboundClientTickEndPacket.
 struct ClientPackets {
     bool attack = false;
-    bool punch = false;  // ServerboundPunchPacket, after the attack
+    int32_t punches = 0;      // ServerboundPunchPacket (startAttack, and continueAttack on a block)
+    int32_t blockActions = 0; // ServerboundPlayerActionPacket START/ABORT_DESTROY_BLOCK (no combat effect)
     bool input = false;
     Keys inputKeys{};
     int32_t sprintCommand = 0;  // +1 START_SPRINTING, -1 STOP_SPRINTING
@@ -119,6 +125,12 @@ struct DuelPlayer {
     int32_t clientAttackStrengthTicker = 0;
     int32_t missTime = 0;  // Minecraft.missTime: clicks are eaten while positive
     HitResult pick{};      // this tick's crosshair pick
+    // MultiPlayerGameMode block-breaking state (a tap on a block starts and aborts mining)
+    bool isDestroying = false;
+    int32_t destroyX = 0, destroyY = 0, destroyZ = 0;
+    int64_t destroyStartTick = -1, tickCount = 0;
+    Vec3 pickFrom{};  // eye position of the last pick
+    bool lastAttackHeld = false;  // the attack key state sampled last tick
     ServerCopy server;
     ClientSendState send;
     ClientPackets packets;
@@ -154,6 +166,32 @@ MCP_HD inline double distanceToSqr(const AABB& b, double x, double y, double z) 
 // Client side
 // ---------------------------------------------------------------------------
 
+// The block a pick hit: the cube the hit location lies in, stepped back from
+// the face it entered through (BlockHitResult.getBlockPos). Full cubes only.
+MCP_HD inline void hitBlock(const HitResult& h, const Vec3& from, int32_t& x, int32_t& y, int32_t& z) {
+    // The location is on the entered face; nudge it along the ray into the block.
+    double dx = h.location.x - from.x, dy = h.location.y - from.y, dz = h.location.z - from.z;
+    x = mth::floor(h.location.x + dx * 1.0E-9);
+    y = mth::floor(h.location.y + dy * 1.0E-9);
+    z = mth::floor(h.location.z + dz * 1.0E-9);
+}
+
+MCP_HD inline bool sameBlock(const DuelPlayer& me, const HitResult& h) {
+    int32_t x, y, z;
+    hitBlock(h, me.pickFrom, x, y, z);
+    return x == me.destroyX && y == me.destroyY && z == me.destroyZ;
+}
+
+// MultiPlayerGameMode.startDestroyBlock (survival, never an instant break in scope).
+MCP_HD inline void startDestroyBlock(DuelPlayer& me, const HitResult& h) {
+    if (me.isDestroying && sameBlock(me, h)) return;
+    if (me.isDestroying) me.packets.blockActions++;  // ABORT the old target
+    hitBlock(h, me.pickFrom, me.destroyX, me.destroyY, me.destroyZ);
+    me.packets.blockActions++;  // START_DESTROY_BLOCK
+    me.isDestroying = true;
+    me.destroyStartTick = me.tickCount;
+}
+
 // One client tick (Minecraft.tick): pick, keybinds (click), movement,
 // sendChanges. `target` is the opponent's box as this client last heard it.
 template <typename World>
@@ -164,10 +202,13 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
     Player& cp = me.client;
     cp.yRot = in.yaw;
     cp.xRot = in.pitch;
-    me.pick = clientPick(PickView{cp.xo, cp.yo, cp.zo, cp.x, cp.y, cp.z, CombatConstants::kEyeHeightStanding, cp.xRot,
-                                  cp.yRot, cp.boundingBox()},
-                         target, w, sinTab);
-    // handleKeybinds -> startAttack
+    PickView view{cp.xo, cp.yo, cp.zo, cp.x, cp.y, cp.z, CombatConstants::kEyeHeightStanding, cp.xRot, cp.yRot,
+                  cp.boundingBox()};
+    me.pick = clientPick(view, target, w, sinTab);
+    me.pickFrom = Vec3{pick::lerp(1.0, cp.xo, cp.x), pick::lerp(1.0, cp.yo, cp.y) + static_cast<double>(view.eyeHeight),
+                       pick::lerp(1.0, cp.zo, cp.z)};
+    me.tickCount++;
+    // handleKeybinds: startAttack for the click, then continueAttack(key down).
     if (in.attack && me.missTime <= 0) {
         switch (me.pick.type) {
             case HitType::Entity:  // MultiPlayerGameMode.attack
@@ -175,17 +216,35 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
                 me.clientAttackStrengthTicker = 0;
                 me.sentAttack = true;
                 break;
-            case HitType::Block:  // startDestroyBlock: mining is not ported
-                cp.unsupported = true;
+            case HitType::Block:
+                startDestroyBlock(me, me.pick);
                 break;
             case HitType::Miss:
                 me.missTime = 10;  // survival has miss time
                 me.clientAttackStrengthTicker = 0;
                 break;
         }
-        out.punch = true;
+        out.punches++;
+    }
+    // continueAttack
+    if (!in.attackHeld) me.missTime = 0;
+    if (me.missTime <= 0) {
+        if (in.attackHeld && me.pick.type == HitType::Block) {
+            if (me.isDestroying && sameBlock(me, me.pick)) {
+                // continueDestroyBlock: mining progress beyond the tick it started is not ported
+                if (me.destroyStartTick != me.tickCount) cp.unsupported = true;
+            } else {
+                startDestroyBlock(me, me.pick);
+            }
+            out.punches++;
+        } else if (me.isDestroying) {  // stopDestroyBlock
+            out.blockActions++;
+            me.isDestroying = false;
+            me.clientAttackStrengthTicker = 0;
+        }
     }
     if (me.missTime > 0) me.missTime--;
+    me.lastAttackHeld = in.attackHeld;
     tick(me.client, in.keys, in.yaw, in.pitch, w, sinTab);
     me.clientAttackStrengthTicker++;
 
@@ -488,7 +547,7 @@ struct Duel {
             DuelPlayer& other = p[1 - i];
             const ClientPackets& pk = me.packets;
             if (pk.attack) duel::handleAttack(me.server, other.server, other.replies, sinTab);
-            if (pk.punch) me.server.attackStrengthTicker = 0;  // handlePunch -> resetAttackStrengthTicker
+            if (pk.punches > 0) me.server.attackStrengthTicker = 0;  // handlePunch -> resetAttackStrengthTicker
             if (pk.input && pk.inputKeys.shift) me.server.body.unsupported = true;  // server-side sneaking not ported
             if (pk.sprintCommand != 0) me.server.setSprinting(pk.sprintCommand > 0);
             if (pk.move) duel::handleMove(me.server, pk.movePacket, w, sinTab);

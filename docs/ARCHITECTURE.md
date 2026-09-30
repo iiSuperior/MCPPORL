@@ -181,8 +181,9 @@ Verified against the 26.3 source:
   → `sendPosition` sends that tick's rotation. So the server evaluates an
   attack with the rotation from the **previous** tick's movement packet.
 - The client picks its target from the crosshair at the moment of the click,
-  but that aim is never sent. The server only checks reach
-  (`isWithinEntityInteractionRange(bounds, 3.0)`), not facing.
+  but that aim is never sent. The server only checks reach (eye to hitbox
+  within 3.0 + 3.0 buffer, `AttackRange.isInRange`), not facing. The fairness
+  policy below closes that gap by resolving every click with the client's pick.
 - Result: face away at the end of tick N (rotation sent), flick back onto the
   target and click in tick N+1: the hit lands and the extra knockback uses the
   away-facing yaw, pulling the victim toward the attacker.
@@ -194,22 +195,45 @@ Verified against the 26.3 source:
 
 The bot may have inhuman *reaction time*, but its *inputs* must be ones a
 human could physically produce. The goal is a bot that beats you by playing
-well, not a killaura. Enforced in the simulator's action interface, and
-therefore in training, and again in the server plugin:
+well, not a killaura. Enforced in the simulator's action interface
+(`sim/include/mcp/fairness.hpp`), and therefore in training, and again in the
+server plugin:
 
-- **Aim to hit.** An attack only counts if, at the moment of the click, the
-  bot's aim ray from its eyes hits the target's hitbox within reach, matching
-  the real client's crosshair pick. Server-legal but unaimed hits are not
-  allowed.
-- **Turn-rate cap.** The total angle the aim travels within a tick (including
-  the unsent mid-tick flick onto a target) is capped. Default: 200 degrees per
-  tick (about 4000 degrees per second, an elite human flick). This keeps the
-  "180 hit" possible while ruling out snapping away and back in one tick.
-- **Click cap.** At most one attack click per tick (20 CPS).
+- **Aim to hit, by construction.** The action is a *click*, not "attack
+  player X". The duel resolves it exactly as the vanilla client does
+  (`Minecraft.tick`: `pick(1.0F)`, then `handleKeybinds`), with a port of
+  `LocalPlayer.pick` (`sim/include/mcp/pick.hpp`) that matches 4000
+  vanilla-resolved picks bit for bit (`pick` test): the eye position, the
+  view vector from the tick's rotation, blocks up to 4.5 blocks away and the
+  opponent's hitbox within 3.0. An attack packet exists only if that ray hits
+  the opponent before any block. The server alone would accept hits up to 6
+  blocks from the eye in any direction.
+- **Misses cost what they cost a human.** A click that finds nothing is a
+  whiff: `missTime = 10` eats further clicks while the attack key stays held
+  (releasing it clears the lockout), and every click that is not eaten sends
+  `ServerboundPunchPacket`, which resets the server's attack strength. Clicking
+  the ground starts and aborts mining a block and also punches. Holding the key
+  on a block mines it; beyond the first tick that is out of scope (flagged).
+- **Turn-rate cap.** The rotation change per tick is capped. Default: 200
+  degrees per tick (about 4000 degrees per second, an elite human flick).
+  Rotation only changes between ticks (the client picks, clicks, moves and
+  sends its rotation inside one `Minecraft.tick`), so this is the whole
+  budget: it keeps the "180 hit" possible while ruling out snapping away and
+  back within a tick.
+- **Click cap.** At most one attack click per tick (20 CPS), and the attack key
+  can only be held if it was pressed this tick or held on the previous one.
 - **Reaction time is unrestricted.** The bot may act on the newest
   information it has received, but never on information still in flight.
 
-All caps are configuration values.
+All caps are configuration values (`FairnessCaps` in `trainer/mcporl/config.py`
+and `fairness.hpp`).
+
+Known gap: a client sees a remote player where its interpolation puts it,
+a few ticks behind the server. Until remote-player interpolation is ported,
+the pick uses the opponent's latest server position, which is slightly more
+generous than what a human sees. The oracle does the same (it has no client
+level), so parity holds; the gap is against real clients, and is tracked with
+client-side pushing, which needs the same interpolation.
 
 ### Contract vs runtime settings
 
