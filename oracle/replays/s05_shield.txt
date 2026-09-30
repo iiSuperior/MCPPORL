@@ -1,0 +1,29 @@
+# Recorded episode: scratchpad update 180, learner vs shield user (lowers it at random); B wins after 26 ticks (death)
+start A x=-5.734375 z=-5.078125 yaw=-34 health=20 item=diamond_sword offhand=shield
+start B x=-4.890625 z=-0.125 yaw=161 health=20 hotbar=netherite_sword,wooden_axe
+1 w sprint yaw=-9.522686 pitch=7.76766205 | w jump sprint yaw=173.854996 pitch=33.4575539
+1 w sprint yaw=-8.38723564 pitch=9.62677479 | w a jump yaw=172.353943 pitch=30.5479145
+1 w sprint yaw=-10.0017452 pitch=9.32408333 | w a jump sprint yaw=175.735489 pitch=24.7705383
+1 w sprint yaw=-11.0105772 pitch=9.53288555 | w a jump sprint yaw=171.914246 pitch=35.5479012
+1 w sprint yaw=-10.3919716 pitch=9.99311638 | w yaw=176.925247 pitch=41.9242439
+1 w sprint yaw=-9.12801838 pitch=3.31954479 | w jump sprint yaw=185.085556 pitch=41.2429047
+1 w yaw=-7.05260611 pitch=0.922373772 | s sprint yaw=180.298828 pitch=51.0378609
+1 yaw=-6.45818901 pitch=-3.47650623 | s d yaw=174.357864 pitch=28.3389912
+1 yaw=-3.00954962 pitch=-9.01814651 | s d yaw=181.807693 pitch=33.7056503
+1 yaw=-3.9559772 pitch=-13.2515812 | s yaw=177.083267 pitch=32.4912415
+1 yaw=-2.17775464 pitch=-15.192852 | d tap yaw=179.960587 pitch=21.8459587
+1 yaw=-1.20811343 pitch=-10.984539 | yaw=175.047424 pitch=42.2962265
+1 yaw=0.591496229 pitch=2.17506695 | d sprint yaw=179.906799 pitch=41.8334885
+1 yaw=0.29634878 pitch=12.1314898 | a sprint yaw=180.95668 pitch=31.4328537
+1 yaw=-0.0503342748 pitch=22.8175106 | a sprint yaw=177.796188 pitch=26.6354637
+1 tap yaw=-0.468198627 pitch=26.7839661 | a yaw=185.444061 pitch=16.6779194
+1 yaw=-1.11015391 pitch=30.46525 | w jump sprint yaw=189.571365 pitch=14.0395021
+1 yaw=1.85183907 pitch=30.0887985 | w a jump yaw=183.601959 pitch=11.9387484
+1 w yaw=4.20942783 pitch=26.403162 | w jump yaw=182.700943 pitch=13.9131746
+1 w yaw=4.24569607 pitch=16.0434456 | w jump sprint yaw=183.871643 pitch=18.4462738
+1 w yaw=2.41354847 pitch=5.91130733 | w jump sprint yaw=184.25563 pitch=15.5891771
+1 w yaw=2.74346089 pitch=-2.61467648 | w jump sprint yaw=183.106644 pitch=14.8912897
+1 w yaw=3.80536842 pitch=-7.81524897 | w yaw=180.867325 pitch=18.3431263
+1 yaw=2.24680567 pitch=-10.4606857 | w yaw=180.738968 pitch=9.91443157
+1 yaw=2.02858233 pitch=-10.5556774 | s yaw=184.42662 pitch=29.434166
+1 yaw=2.78455234 pitch=-7.73527908 | s d tap yaw=180.059692 pitch=26.1931019
