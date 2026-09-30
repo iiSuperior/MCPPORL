@@ -2,12 +2,7 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 24: tracker pairing, sync triggers, predicted movement.
-net.minecraft.world.entity.Entity move
-net.minecraft.world.entity.LivingEntity knockback setHealth
-net.minecraft.network.protocol.game.ClientboundAddEntityPacket ClientboundAddEntityPacket
-net.minecraft.server.level.ServerEntity addPairing removePairing sendDirtyEntityData
-net.minecraft.network.syncher.SynchedEntityData isDirty set
-net.minecraft.server.level.ChunkMap isChunkTracked updatePlayer updatePlayers
-net.minecraft.server.network.PlayerChunkSender :all
-net.minecraft.server.level.ServerLevel :grep=getChunkSource\(\)\.tick|entityTickList\.forEach|tickNonPassenger\(
+# Batch 25: confirm what else raises needsSync, and the client-side handling around a remote player.
+net.minecraft.world.entity.LivingEntity jumpFromGround
+net.minecraft.world.entity.Entity :grep=needsSync = true|absSnapRotationTo|onInterpolationStart
+net.minecraft.world.entity.Entity absSnapRotationTo onInterpolationStart
