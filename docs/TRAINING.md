@@ -115,6 +115,38 @@ the replay coverage. Many of those crits (10.5 damage with a diamond sword)
 are the learner's own: it opens fights with a falling hit, e.g. in `t00`,
 where the tactician does not crit at all. All 22 replays are part of `ctest`.
 
+## Hotbar and shields: does it learn to swap?
+
+Hotbar switching and shields are ported bit for bit (oracle scenarios 40 to
+51, `oracle/combat/README.md`). The policy gets a hotbar-key head (none,
+slot 0, slot 1) and 16 more observations: the selected slot, what the first
+three slots hold (damage, and whether it disables shields), its own shield
+and cooldown, and the opponent's shield as its client sees it (raised, and for
+how long) and whether the opponent holds an axe. Both experiments start from
+`sword9`, grown to the new inputs and head (zero weights; the new head starts
+at ~96% "no key"), so at update 0 the policy fights exactly like `sword9` and
+never swaps. The reward is unchanged: damage and wins, nothing for swapping.
+
+### Experiment A: wooden sword in hand, netherite sword in slot 1
+
+The learner spawns holding a wooden sword (4.0 per hit) with a netherite
+sword (8.0) in slot 1, against diamond swords (7.0): the tactician (60%),
+aim bots, a few dummies, and 20% self-play.
+
+| Update | vs tactician: win | swaps per fight | ticks holding the netherite | vs hard bot: win |
+|---|---|---|---|---|
+| 10 | 1% | 0 | 2% | 51% |
+| 20 | 55% | 0.92 | 76% | 86% |
+| 30 | 64% | 1.00 | 100% | 89% |
+| 60 | 76% | 1.00 | 100% | 91% |
+| 80 | 74% | 1.00 | 100% | 89% |
+
+**Yes, within 20 updates (~0.8M agent-steps, 30 seconds).** It swaps
+exactly once per fight, on its first tick (before the opponent is in reach,
+so the attack-strength reset the swap causes costs nothing), and never swaps
+back. Stuck with the wooden sword it won 1% against the tactician; with the
+swap it is back to `sword9`'s level with a better sword.
+
 ### What went wrong on the way (runs 1 to 7)
 
 Each failure was the reward or the rules, not the code:

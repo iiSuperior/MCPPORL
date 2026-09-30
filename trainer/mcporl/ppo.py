@@ -319,7 +319,7 @@ STANDARD_EVAL = ("dummy", "bot_easy", "bot_medium", "bot_hard", "tactician", "ta
 
 
 def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, seed: int,
-             frozen: Policy | None = None) -> dict:
+             frozen: Policy | None = None, deterministic: bool = True) -> dict:
     """Deterministic learner vs a fixed opponent, the learner on both sides equally.
 
     opponent: a key of EVAL_OPPONENTS, or "frozen" (an earlier policy)."""
@@ -336,7 +336,7 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
     while not finished.all():
         with torch.no_grad():
             o = torch.from_numpy(norm(obs))
-            c, t, _, _ = policy.act(o, deterministic=True)
+            c, t, _, _ = policy.act(o, deterministic=deterministic)
             a_learn = policy.env_actions(c.numpy(), t.numpy())
             if opponent == "frozen":
                 c2, t2, _, _ = frozen.act(o, deterministic=True)
