@@ -2,15 +2,13 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 21: the concrete interpolation and tracking classes.
-net.minecraft.world.entity.SteppedInterpolationHandler :all
-net.minecraft.world.entity.PositionStep :all
-net.minecraft.network.protocol.game.VecDelta :all
-net.minecraft.server.level.UpdateInterval :all
-net.minecraft.world.entity.Entity commonTick createInterpolationTracker recreateFromPacket getAddEntityPacket storePositionAndRotation setOldRot
-net.minecraft.world.entity.LivingEntity createInterpolationTracker recreateFromPacket
-net.minecraft.world.entity.player.Player createInterpolationTracker
-net.minecraft.server.level.ServerEntity ServerEntity getPositionBase
-net.minecraft.server.level.ChunkMap :grep=new ServerEntity|updatePlayer\(|addEntity\(|class TrackedEntity
-net.minecraft.util.Mth packDegrees unpackDegrees rotLerp rotlerp
-net.minecraft.network.protocol.game.ClientboundAddEntityPacket :signatures
+# Batch 22: interpolation internals and entity tracking cadence.
+net.minecraft.world.entity.AbstractInterpolationHandler :all
+net.minecraft.world.entity.SteppedInterpolationTracker :all
+net.minecraft.core.PositionAndRotation :all
+net.minecraft.server.level.ServerEntity :grep=^import|UpdateInterval
+net.minecraft.world.entity.EntityType :grep=PLAYER\s=\sregister|\.updateInterval\(2\)|\.clientTrackingRange\(32\)
+net.minecraft.world.phys.Vec3 lerp
+net.minecraft.world.level.Level getRelativeTickSpeed
+net.minecraft.server.level.ChunkMap :grep=serverEntity\.|seenBy\.|void updatePlayer|void tick\(\)|sendChanges
+net.minecraft.world.entity.Entity syncPacketPositionCodec setPosRaw setRot absSnapTo
