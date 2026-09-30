@@ -39,6 +39,7 @@ struct Keys {
 
 struct Player {
     double x = 0.0, y = 0.0, z = 0.0;
+    double xo = 0.0, yo = 0.0, zo = 0.0;  // position at the start of the last tick (setOldPosAndRot)
     Vec3 vel{};
     float yRot = 0.0F, xRot = 0.0F;
     float xxa = 0.0F, zza = 0.0F;
@@ -218,6 +219,9 @@ MCP_HD void tick(Player& p, const Keys& keys, float yaw, float pitch, const Worl
     using C = PlayerConstants;
     p.yRot = yaw;
     p.xRot = pitch;
+    p.xo = p.x;  // Level.tickEntities: setOldPosAndRot before the entity tick
+    p.yo = p.y;
+    p.zo = p.z;
 
     // ---- LocalPlayer.aiStep (input part) ----
     p.crouching = p.keys.shift;  // isShiftKeyDown() before the input is re-sampled

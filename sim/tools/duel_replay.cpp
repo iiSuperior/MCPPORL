@@ -155,13 +155,15 @@ void writeState(std::FILE* out, const DuelPlayer& d) {
                  "\", \"server.attackStrength\": \"%08" PRIx32 "\", \"server.vel.x\": \"%016" PRIx64
                  "\", \"server.vel.y\": \"%016" PRIx64 "\", \"server.vel.z\": \"%016" PRIx64
                  "\", \"server.yRot\": \"%08" PRIx32 "\", \"speedAttr\": \"%016" PRIx64
-                 "\", \"gotVelocity\": %s, \"sentAttack\": %s, \"teleports\": 0}",
+                 "\", \"pick\": %d, \"pick.x\": \"%016" PRIx64 "\", \"pick.y\": \"%016" PRIx64 "\", \"pick.z\": \"%016" PRIx64
+                 "\", \"missTime\": %d, \"gotVelocity\": %s, \"sentAttack\": %s, \"teleports\": 0}",
                  j::dbits(c.x), j::dbits(c.y), j::dbits(c.z), j::dbits(c.vel.x), j::dbits(c.vel.y), j::dbits(c.vel.z),
                  j::fbits(c.yRot), tf(c.onGround), tf(c.sprinting), tf(s.body.sprinting), j::fbits(s.health),
                  s.hurtTime, s.damageCooldownTime, tf(s.body.onGround), j::dbits(s.fallDistance),
                  j::fbits(s.attackStrengthScale(0.5F)), j::dbits(s.body.vel.x), j::dbits(s.body.vel.y),
                  j::dbits(s.body.vel.z), j::fbits(s.body.yRot), j::dbits(c.movementSpeedAttribute()),
-                 tf(d.gotVelocity), tf(d.sentAttack));
+                 static_cast<int>(d.pick.type), j::dbits(d.pick.location.x), j::dbits(d.pick.location.y),
+                 j::dbits(d.pick.location.z), d.missTime, tf(d.gotVelocity), tf(d.sentAttack));
 }
 
 }  // namespace
@@ -191,7 +193,8 @@ int main(int argc, char** argv) {
                  "\"server.health\": \"f32\", \"server.hurtTime\": \"i32\", \"server.damageCooldown\": \"i32\", "
                  "\"server.onGround\": \"bool\", \"server.fallDistance\": \"f64\", \"server.attackStrength\": \"f32\", "
                  "\"server.vel.x\": \"f64\", \"server.vel.y\": \"f64\", \"server.vel.z\": \"f64\", "
-                 "\"server.yRot\": \"f32\", \"speedAttr\": \"f64\", \"gotVelocity\": \"bool\", "
+                 "\"server.yRot\": \"f32\", \"speedAttr\": \"f64\", \"pick\": \"i32\", \"pick.x\": \"f64\", "
+                 "\"pick.y\": \"f64\", \"pick.z\": \"f64\", \"missTime\": \"i32\", \"gotVelocity\": \"bool\", "
                  "\"sentAttack\": \"bool\", \"teleports\": \"i32\"}, "
                  "\"meta\": {\"scenario\": \"%s\", \"players\": [\"A\", \"B\"]}}\n",
                  s.name.c_str());

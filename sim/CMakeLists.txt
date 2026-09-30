@@ -45,6 +45,11 @@ if(BUILD_TESTING)
            COMMAND ${CMAKE_COMMAND} -DBENCH=$<TARGET_FILE:bench_tick>
              -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/bench_hash.cmake)
 
+  add_executable(test_pick tests/test_pick.cpp)
+  target_link_libraries(test_pick PRIVATE mcp_sim)
+  add_test(NAME pick COMMAND test_pick ${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin
+           ${CMAKE_CURRENT_SOURCE_DIR}/data/pick_golden.txt)
+
   add_executable(test_lpvec3 tests/test_lpvec3.cpp)
   target_link_libraries(test_lpvec3 PRIVATE mcp_sim)
   add_test(NAME lpvec3 COMMAND test_lpvec3 ${CMAKE_CURRENT_SOURCE_DIR}/data/lpvec3_golden.txt)

@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include "mcp/lpvec3.hpp"
+#include "mcp/pick.hpp"
 #include "mcp/player.hpp"
 
 namespace mcp {
@@ -36,7 +37,10 @@ struct CombatConstants {
     static constexpr double kSafeFallDistance = 3.0;
 };
 
-// Inputs for one player on one tick (CombatScenario.Input).
+// Inputs for one player on one tick (CombatScenario.Input). `attack` is a
+// click: what it does is decided by the client's crosshair pick, as in vanilla.
+// yaw/pitch are the rotation during the tick (the mouse moves between ticks),
+// used by the pick, the movement and the rotation sent at the end of the tick.
 struct DuelInput {
     Keys keys{};
     bool attack = false;
@@ -56,6 +60,7 @@ struct MovePacket {
 // then ServerboundClientTickEndPacket.
 struct ClientPackets {
     bool attack = false;
+    bool punch = false;  // ServerboundPunchPacket, after the attack
     bool input = false;
     Keys inputKeys{};
     int32_t sprintCommand = 0;  // +1 START_SPRINTING, -1 STOP_SPRINTING
@@ -112,6 +117,8 @@ struct ClientSendState {
 struct DuelPlayer {
     Player client;
     int32_t clientAttackStrengthTicker = 0;
+    int32_t missTime = 0;  // Minecraft.missTime: clicks are eaten while positive
+    HitResult pick{};      // this tick's crosshair pick
     ServerCopy server;
     ClientSendState send;
     ClientPackets packets;
@@ -147,20 +154,38 @@ MCP_HD inline double distanceToSqr(const AABB& b, double x, double y, double z) 
 // Client side
 // ---------------------------------------------------------------------------
 
-// One client tick: keybinds (attack), movement, sendChanges.
+// One client tick (Minecraft.tick): pick, keybinds (click), movement,
+// sendChanges. `target` is the opponent's box as this client last heard it.
 template <typename World>
-MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const World& w, const float* sinTab) {
+MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, const World& w, const float* sinTab) {
     ClientPackets& out = me.packets;
     out = ClientPackets{};
     me.sentAttack = false;
-    // Minecraft.handleKeybinds runs before the entity tick, so the attack packet
-    // precedes this tick's movement. Client-side Player.attack changes nothing
-    // but the attack strength ticker (hurtClient is false for other players).
-    if (in.attack) {
-        out.attack = true;
-        me.clientAttackStrengthTicker = 0;
-        me.sentAttack = true;
+    Player& cp = me.client;
+    cp.yRot = in.yaw;
+    cp.xRot = in.pitch;
+    me.pick = clientPick(PickView{cp.xo, cp.yo, cp.zo, cp.x, cp.y, cp.z, CombatConstants::kEyeHeightStanding, cp.xRot,
+                                  cp.yRot, cp.boundingBox()},
+                         target, w, sinTab);
+    // handleKeybinds -> startAttack
+    if (in.attack && me.missTime <= 0) {
+        switch (me.pick.type) {
+            case HitType::Entity:  // MultiPlayerGameMode.attack
+                out.attack = true;
+                me.clientAttackStrengthTicker = 0;
+                me.sentAttack = true;
+                break;
+            case HitType::Block:  // startDestroyBlock: mining is not ported
+                cp.unsupported = true;
+                break;
+            case HitType::Miss:
+                me.missTime = 10;  // survival has miss time
+                me.clientAttackStrengthTicker = 0;
+                break;
+        }
+        out.punch = true;
     }
+    if (me.missTime > 0) me.missTime--;
     tick(me.client, in.keys, in.yaw, in.pitch, w, sinTab);
     me.clientAttackStrengthTicker++;
 
@@ -432,9 +457,9 @@ struct Duel {
     MCP_HD void spawn(int32_t i, double x, double y, double z, float yaw, const World& w) {
         DuelPlayer& d = p[i];
         d = DuelPlayer{};
-        d.client.x = x;
-        d.client.y = y;
-        d.client.z = z;
+        d.client.x = d.client.xo = x;
+        d.client.y = d.client.yo = y;
+        d.client.z = d.client.zo = z;
         d.client.yRot = yaw;
         d.send.xLast = x;
         d.send.yLast = y;
@@ -453,14 +478,17 @@ struct Duel {
 
     template <typename World>
     MCP_HD void step(const DuelInput& a, const DuelInput& b, const World& w, const float* sinTab) {
-        duel::clientTick(p[0], a, w, sinTab);
-        duel::clientTick(p[1], b, w, sinTab);
+        // Each client sees the other where the server last put it (zero latency,
+        // no remote-player interpolation yet).
+        duel::clientTick(p[0], a, p[1].server.body.boundingBox(), w, sinTab);
+        duel::clientTick(p[1], b, p[0].server.body.boundingBox(), w, sinTab);
         // Server: each client's packets in send order, then one server tick.
         for (int32_t i = 0; i < 2; ++i) {
             DuelPlayer& me = p[i];
             DuelPlayer& other = p[1 - i];
             const ClientPackets& pk = me.packets;
             if (pk.attack) duel::handleAttack(me.server, other.server, other.replies, sinTab);
+            if (pk.punch) me.server.attackStrengthTicker = 0;  // handlePunch -> resetAttackStrengthTicker
             if (pk.input && pk.inputKeys.shift) me.server.body.unsupported = true;  // server-side sneaking not ported
             if (pk.sprintCommand != 0) me.server.setSprinting(pk.sprintCommand > 0);
             if (pk.move) duel::handleMove(me.server, pk.movePacket, w, sinTab);

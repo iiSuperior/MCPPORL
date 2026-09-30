@@ -2,10 +2,8 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 16: view rotation used by the local player's pick.
-net.minecraft.client.player.LocalPlayer getViewYRot getViewXRot
-net.minecraft.world.entity.Entity getYRot getXRot setOldPosAndRot setOldPos
-net.minecraft.world.phys.Vec3 closerThan distanceToSqr
-net.minecraft.world.entity.LivingEntity isPickable
-net.minecraft.world.entity.Attributes :grep=BLOCK_INTERACTION_RANGE|ENTITY_INTERACTION_RANGE
-net.minecraft.world.entity.ai.attributes.Attributes :grep=BLOCK_INTERACTION_RANGE|ENTITY_INTERACTION_RANGE
+# Batch 17: attack key handling (does releasing the key clear missTime?) and block taps.
+net.minecraft.client.Minecraft handleKeybinds continueAttack
+net.minecraft.client.multiplayer.MultiPlayerGameMode startDestroyBlock continueDestroyBlock stopDestroyBlock sameDestroyTarget
+net.minecraft.network.protocol.game.ServerboundPlayerActionPacket :signatures
+net.minecraft.client.KeyMapping consumeClick isDown click setDown
