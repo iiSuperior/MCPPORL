@@ -2,17 +2,15 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 20: how a client sees a remote player (tracking, position packets, interpolation).
-net.minecraft.world.entity.Entity :grep=interpolat|Interpolat|trackingPosition|getPositionCodec|setOldPosAndRot\(\)
-net.minecraft.world.entity.LivingEntity :grep=interpolat|Interpolat|lerpHead
-net.minecraft.world.entity.EntityType :grep=PLAYER\s=|clientTrackingRange\(|updateInterval\(
-net.minecraft.server.level.ServerEntity :fields
-net.minecraft.server.level.ServerEntity sendPairingData isFullPrecisionEncodingRequired
-net.minecraft.network.protocol.game.VecDeltaCodec :all
-net.minecraft.world.entity.InterpolationTracker :all
-net.minecraft.world.entity.PositionPath :all
-net.minecraft.network.protocol.game.ClientboundMoveEntityPacket :all
-net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket :all
-net.minecraft.client.multiplayer.ClientLevel tickNonPassenger tickEntities
-net.minecraft.client.player.AbstractClientPlayer tick aiStep
-net.minecraft.client.multiplayer.ClientPacketListener handleSetEntityMotion
+# Batch 21: the concrete interpolation and tracking classes.
+net.minecraft.world.entity.SteppedInterpolationHandler :all
+net.minecraft.world.entity.PositionStep :all
+net.minecraft.network.protocol.game.VecDelta :all
+net.minecraft.server.level.UpdateInterval :all
+net.minecraft.world.entity.Entity commonTick createInterpolationTracker recreateFromPacket getAddEntityPacket storePositionAndRotation setOldRot
+net.minecraft.world.entity.LivingEntity createInterpolationTracker recreateFromPacket
+net.minecraft.world.entity.player.Player createInterpolationTracker
+net.minecraft.server.level.ServerEntity ServerEntity getPositionBase
+net.minecraft.server.level.ChunkMap :grep=new ServerEntity|updatePlayer\(|addEntity\(|class TrackedEntity
+net.minecraft.util.Mth packDegrees unpackDegrees rotLerp rotlerp
+net.minecraft.network.protocol.game.ClientboundAddEntityPacket :signatures
