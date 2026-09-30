@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
     }
     auto sinTab = loadSinTable(argv[1]);
     Scenario s = parseScenario(argv[2]);
-    FlatWorld world;
+    ArenaWorld world;  // the oracle walls its arena in (CombatOracle.forceArena)
     if (argc > 4) world.surfaceY = std::atoi(argv[4]);
     double y = static_cast<double>(world.surfaceY);
 

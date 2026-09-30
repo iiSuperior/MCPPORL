@@ -151,6 +151,22 @@ scenario in `oracle/combat/` must replay bit-identically (`combat_*` tests).
 Latency is added later by delaying the packet queues, using the same
 `DelayLine` model as the simulator.
 
+#### Walled arena
+
+Training duels (`sim/include/mcp/env.hpp`) and the oracle's combat arena are
+walled in by a ring of barrier blocks, 4 high, on the columns x or z = -25
+and 24 (`ArenaWorld` in `world.hpp`; `CombatOracle.forceArena`). Barriers
+are invisible to human players, so a deployed bot behaves the same in any
+arena with the same walls; the bot observes its distance to the edge, as a
+human sees walls. Earlier, open arenas taught policies to run away to force
+a draw.
+
+**Open item for block placement (Phase 3):** once players can place blocks
+(buckets, cobwebs, building), the ring must stay the edge: no placing on or
+above a wall column, no breaking it, and no building up past its top.
+Either extend the walls to the build limit or enforce a placement height
+check, or bots will learn to climb out over their own blocks.
+
 ### Floating-point rules (non-negotiable for bit-exactness)
 
 Java has been strict IEEE 754 since Java 17: no extended precision and no

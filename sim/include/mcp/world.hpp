@@ -9,7 +9,7 @@
 
 namespace mcp {
 
-enum class Block : uint8_t { Air, Grass, Dirt, Bedrock };
+enum class Block : uint8_t { Air, Grass, Dirt, Bedrock, Barrier };
 
 // Block properties used by movement (Block.getFriction/getSpeedFactor/getJumpFactor).
 MCP_HD inline float blockFrictionOf(Block) { return 0.6F; }
@@ -26,6 +26,34 @@ struct FlatWorld {
         if (y >= surfaceY - 3) return Block::Dirt;
         if (y == surfaceY - 4) return Block::Bedrock;
         return Block::Air;  // below bedrock: the void
+    }
+    MCP_HD bool solid(int32_t x, int32_t y, int32_t z) const { return get(x, y, z) != Block::Air; }
+};
+
+// The superflat floor walled in by barrier blocks: a ring `wallHeight` high
+// (more than a jump) on the columns x or z = -radius-1 and radius, so a
+// player's feet stay within [-radius, radius). Barriers are invisible to
+// human players and full cubes to collision; the oracle builds the same ring
+// (CombatOracle.forceArena).
+//
+// When block placing arrives (Phase 3: buckets, cobwebs, blocks), the ring
+// must stay the arena's edge: no placement on or above a wall column, no
+// breaking it, and no building up past its top (docs/ARCHITECTURE.md,
+// "Walled arena"). Raise wallHeight to the build limit or add a height
+// check then, or bots will learn to climb out over their own blocks.
+struct ArenaWorld {
+    int32_t surfaceY = -60;
+    int32_t radius = 24;
+    int32_t wallHeight = 4;
+
+    MCP_HD bool wall(int32_t x, int32_t y, int32_t z) const {
+        if (y < surfaceY || y >= surfaceY + wallHeight) return false;
+        bool inX = x >= -radius - 1 && x <= radius, inZ = z >= -radius - 1 && z <= radius;
+        return (inZ && (x == -radius - 1 || x == radius)) || (inX && (z == -radius - 1 || z == radius));
+    }
+    MCP_HD Block get(int32_t x, int32_t y, int32_t z) const {
+        if (wall(x, y, z)) return Block::Barrier;
+        return FlatWorld{surfaceY}.get(x, y, z);
     }
     MCP_HD bool solid(int32_t x, int32_t y, int32_t z) const { return get(x, y, z) != Block::Air; }
 };

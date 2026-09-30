@@ -768,11 +768,23 @@ public final class CombatOracle {
         return String.format("%08x", Float.floatToRawIntBits(f));
     }
 
-    /** Force-load the arena chunks (on the server thread). */
+    /** Barrier ring of the training arena (sim world.hpp ArenaWorld): x or z = -R-1 and R, 4 high. */
+    static final int ARENA_RADIUS = 24, WALL_HEIGHT = 4;
+
+    /** Force-load the arena chunks and wall it in (on the server thread). */
     void forceArena() {
         for (int dx = -8; dx <= 8; dx++) for (int dz = -8; dz <= 8; dz++) {
             level.setChunkForced(dx, dz, true);
             level.getChunk(dx, dz);
+        }
+        int r = ARENA_RADIUS, floor = level.getHeight(Heightmap.Types.MOTION_BLOCKING, 0, 0);
+        for (int i = -r - 1; i <= r; i++) {
+            for (int y = floor; y < floor + WALL_HEIGHT; y++) {
+                for (BlockPos p : new BlockPos[] {new BlockPos(i, y, -r - 1), new BlockPos(i, y, r),
+                        new BlockPos(-r - 1, y, i), new BlockPos(r, y, i)}) {
+                    level.setBlockAndUpdate(p, Blocks.BARRIER.defaultBlockState());
+                }
+            }
         }
     }
 

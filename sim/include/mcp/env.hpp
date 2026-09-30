@@ -30,9 +30,9 @@ namespace mcp {
 
 struct EnvConfig {
     int32_t maxTicks = 600;         // 30 s; longer episodes are truncated (a draw)
-    // Leaving the arena (|x| or |z| beyond this) loses the episode, as a wall
-    // would stop a real player; within the oracle's loaded area (+-128).
-    double arenaRadius = 24.0;
+    // The arena: a barrier ring at +-arenaRadius (world.hpp ArenaWorld), well
+    // inside the oracle's loaded area (+-128).
+    int32_t arenaRadius = 24;
     double minStartDist = 3.0, maxStartDist = 10.0;
     uint32_t weaponMask = 1u << static_cast<uint32_t>(Weapon::Hand);  // weapons drawn at each start
     bool sameWeapon = true;          // both players get the same weapon
@@ -85,7 +85,7 @@ inline float aimError(const DuelPlayer& me) {
 
 struct BatchEnv {
     EnvConfig cfg;
-    FlatWorld world;
+    ArenaWorld world;
     std::vector<float> sinTab;
     std::vector<Duel> duels;
     std::vector<DuelRewards> rewards;
@@ -103,7 +103,7 @@ struct BatchEnv {
     std::vector<int32_t> recordedNonParity;        // random draws vanilla makes differently (duel.hpp)
 
     BatchEnv(int32_t n, uint64_t seed, std::vector<float> table, const EnvConfig& c)
-        : cfg(c), sinTab(std::move(table)), duels(n), rewards(n), ticks(n, 0), stats(n), starts(2 * n), rng{seed},
+        : cfg(c), world{-60, c.arenaRadius, 4}, sinTab(std::move(table)), duels(n), rewards(n), ticks(n, 0), stats(n), starts(2 * n), rng{seed},
           recording(n, 0), recorded(2 * n), recordedStarts(2 * n), recordedDone(n, 0),
           recordedNonParity(n, 0) {
         for (int32_t i = 0; i < n; ++i) resetDuel(i);
@@ -210,7 +210,7 @@ struct BatchEnv {
         o[n++] = static_cast<float>(ticks[i]) / static_cast<float>(cfg.maxTicks);
         // Where the arena is: the direction to its centre in the player's
         // frame, and how far the nearest edge is (a wall a human can see).
-        double R = cfg.arenaRadius;
+        double R = static_cast<double>(cfg.arenaRadius);
         o[n++] = fwd(-c.x, -c.z) / static_cast<float>(R);
         o[n++] = side(-c.x, -c.z) / static_cast<float>(R);
         o[n++] = static_cast<float>((R - std::fmax(std::fabs(c.x), std::fabs(c.z))) / R);
@@ -257,10 +257,11 @@ struct BatchEnv {
             d.step(in[0], in[1], world, sinTab.data());
             bool dead = d.done();
             int32_t winner = d.winner();
+            // The walls keep players in; this only guards against a bug.
             bool out[2] = {false, false};
             for (int32_t k = 0; k < 2; ++k) {
                 const Player& c = d.p[k].client;
-                out[k] = std::fabs(c.x) > cfg.arenaRadius || std::fabs(c.z) > cfg.arenaRadius;
+                out[k] = std::fabs(c.x) > cfg.arenaRadius + 1 || std::fabs(c.z) > cfg.arenaRadius + 1;
             }
             bool left = !dead && (out[0] || out[1]);
             if (left) winner = out[0] == out[1] ? -1 : (out[0] ? 1 : 0);
