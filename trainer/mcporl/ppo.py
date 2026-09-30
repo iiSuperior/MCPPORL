@@ -83,10 +83,14 @@ class PPOConfig:
     # Extra action heads: hotbar keys for slots 0..slot_keys-1, and the use key.
     slot_keys: int = 0
     use_key: bool = False
-    # Share of scripted duels against the shield user, and its range of
-    # per-tick chances to lower the shield voluntarily.
+    # Share of scripted duels against the shield user, its range of per-tick
+    # chances to lower the shield voluntarily, the share of shield users that
+    # never lower it, and the range of health at or below which they panic
+    # (never lower it again; 0: never panic).
     shielder: float = 0.0
     shield_lower: tuple[float, float] = (0.01, 0.06)
+    shield_never: float = 0.0
+    shield_panic: tuple[float, float] = (0.0, 0.0)
     # Evaluation opponents (keys of EVAL_OPPONENTS); empty: the standard set.
     eval_opponents: tuple[str, ...] = ()
 
@@ -236,6 +240,7 @@ class Opponents:
         self.cheats = np.zeros(2 * n, np.uint32)
         self.crits = np.zeros(2 * n, np.uint8)
         self.lower = np.zeros(2 * n, np.float32)
+        self.panic = np.zeros(2 * n, np.float32)
         n_self = int(round(n * cfg.self_play))
         self.self_play = np.arange(n) < n_self
         for i in range(n):
@@ -271,7 +276,8 @@ class Opponents:
         self.noise[s] = self.rng.uniform(0.5, 12.0) if self.who[i] != self.EXPERT else 0.0
         self.turn[s] = self.rng.uniform(6.0, 60.0)
         self.crits[s] = self.rng.random() < 0.5
-        self.lower[s] = self.rng.uniform(*c.shield_lower)
+        self.lower[s] = 0.0 if self.rng.random() < c.shield_never else self.rng.uniform(*c.shield_lower)
+        self.panic[s] = self.rng.uniform(*c.shield_panic)
         cheats = 0
         if self.who[i] == self.EXPERT:
             while cheats == 0:  # at least one cheat, any combination
@@ -290,7 +296,7 @@ class Opponents:
             env.tactician_each(tact, self.noise, self.turn, self.cheats, self.crits, actions)
         shield = other & (who == self.SHIELD)
         if shield.any():
-            env.shielder_each(shield, self.noise, self.turn, self.lower, actions)
+            env.shielder_each(shield, self.noise, self.turn, self.lower, self.panic, actions)
         past = other & (who == self.LEAGUE)
         if past.any():
             if league is None:
@@ -301,7 +307,7 @@ class Opponents:
 
 
 # Evaluation opponents: (kind, noise, turn, cheats, crits); kind "aim", "dummy" or "tact";
-# kind "shield": (kind, noise, turn, chance per tick to lower the shield, 0).
+# kind "shield": (kind, noise, turn, chance per tick to lower the shield, panic health).
 # "expert" cheats (opponent only): report it apart from the fair ones.
 EVAL_OPPONENTS = {
     "dummy": ("dummy", 0.0, 30.0, 0, 0),
@@ -314,6 +320,8 @@ EVAL_OPPONENTS = {
     "shielder": ("shield", 1.5, 45.0, 0.03, 0),
     "shielder_stubborn": ("shield", 1.5, 45.0, 0.005, 0),
     "shielder_open": ("shield", 1.5, 45.0, 0.2, 0),
+    "shielder_never": ("shield", 1.5, 45.0, 0.0, 0),   # never lowers it voluntarily
+    "shielder_panic": ("shield", 1.5, 45.0, 0.03, 8),  # stops lowering it at 8 health or less
 }
 STANDARD_EVAL = ("dummy", "bot_easy", "bot_medium", "bot_hard", "tactician", "tactician_crits", "expert")
 
@@ -352,7 +360,7 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
                                    np.full(2 * n, cheats, np.uint32), np.full(2 * n, crits, np.uint8), actions)
             elif kind == "shield":
                 env.shielder_each(mask, np.full(2 * n, noise, np.float32), np.full(2 * n, turn, np.float32),
-                                  np.full(2 * n, cheats, np.float32), actions)
+                                  np.full(2 * n, cheats, np.float32), np.full(2 * n, crits, np.float32), actions)
             else:
                 env.scripted(mask, 0 if kind == "dummy" else 1, noise, turn, actions)
         obs, _, done, stats = env.step(actions)

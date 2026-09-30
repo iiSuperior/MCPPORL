@@ -572,8 +572,11 @@ struct BatchEnv {
     // keeps its off-hand shield raised; each tick, with probability
     // `lowerRate`, it lowers it voluntarily for 10 to 40 ticks, and swings its
     // main-hand weapon at full strength while it is down (and while the shield
-    // is disabled). Needs a shield in the off hand (a loadout).
-    void shielder(int32_t i, int32_t k, float noiseDeg, float turnDeg, float lowerRate, float* a) {
+    // is disabled). At or below `panicHealth` (its own health, which its player
+    // sees) it panics: it never lowers the shield voluntarily again, and cuts
+    // short a lowered window. lowerRate 0: never lowers it at all. Needs a
+    // shield in the off hand (a loadout).
+    void shielder(int32_t i, int32_t k, float noiseDeg, float turnDeg, float lowerRate, float panicHealth, float* a) {
         const Duel& d = duels[i];
         const DuelPlayer& me = d.p[k];
         const Player& c = me.client;
@@ -594,7 +597,10 @@ struct BatchEnv {
         reach::ReachState r = reachOf(d, k);
         a[0] = r.mine > 2.8 ? 1.0F : 0.0F;
         a[3] = r.mine > 3.5 ? 1.0F : 0.0F;
-        if (T.shieldDown > 0) {
+        bool panicking = me.server.health <= panicHealth;
+        if (panicking) {
+            T.shieldDown = 0;
+        } else if (T.shieldDown > 0) {
             T.shieldDown--;
         } else if (uniform() < static_cast<double>(lowerRate)) {
             T.shieldDown = 10 + static_cast<int32_t>(uniform() * 31.0);

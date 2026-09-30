@@ -62,7 +62,7 @@ def _load() -> ctypes.CDLL:
     _I32 = ctypes.POINTER(ctypes.c_int32)
     lib.mcp_env_scripted_each.argtypes = [ctypes.c_void_p, _U8, _I32, _F, _F, _F]
     lib.mcp_env_tactician_each.argtypes = [ctypes.c_void_p, _U8, _F, _F, ctypes.POINTER(ctypes.c_uint32), _U8, _F]
-    lib.mcp_env_shielder_each.argtypes = [ctypes.c_void_p, _U8, _F, _F, _F, _F]
+    lib.mcp_env_shielder_each.argtypes = [ctypes.c_void_p, _U8, _F, _F, _F, _F, _F]
     lib.mcp_env_set_loadout.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.c_int]
     lib.mcp_env_reset_duel.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.mcp_env_record.argtypes = [ctypes.c_void_p, ctypes.c_int]
@@ -170,13 +170,15 @@ class DuelEnv:
         return out
 
     def shielder_each(self, mask: np.ndarray, noise_deg: np.ndarray, turn_deg: np.ndarray, lower_rate: np.ndarray,
-                      out: np.ndarray) -> np.ndarray:
-        """Shield users (raise the off-hand shield, lower it at random, swing while it is down)."""
+                      panic_health: np.ndarray, out: np.ndarray) -> np.ndarray:
+        """Shield users (raise the off-hand shield, lower it at random, swing while it is down; at or
+        below panic_health they never lower it; lower_rate 0 never lowers it)."""
         m = np.ascontiguousarray(mask, dtype=np.uint8)
         nz = np.ascontiguousarray(noise_deg, dtype=np.float32)
         tr = np.ascontiguousarray(turn_deg, dtype=np.float32)
         lo = np.ascontiguousarray(lower_rate, dtype=np.float32)
-        lib().mcp_env_shielder_each(self._h, _p(m, _U8), _p(nz, _F), _p(tr, _F), _p(lo, _F), _p(out, _F))
+        ph = np.ascontiguousarray(panic_health, dtype=np.float32)
+        lib().mcp_env_shielder_each(self._h, _p(m, _U8), _p(nz, _F), _p(tr, _F), _p(lo, _F), _p(ph, _F), _p(out, _F))
         return out
 
     def set_loadout(self, slot: int, hotbar: tuple[str, ...] | None, offhand: str = "") -> None:
