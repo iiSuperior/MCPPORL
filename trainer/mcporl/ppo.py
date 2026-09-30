@@ -91,6 +91,8 @@ class PPOConfig:
     shield_lower: tuple[float, float] = (0.01, 0.06)
     shield_never: float = 0.0
     shield_panic: tuple[float, float] = (0.0, 0.0)
+    # Logit bias of "no key" in heads added to an init checkpoint (4: ~96% at first).
+    head_bias: float = 4.0
     # Evaluation opponents (keys of EVAL_OPPONENTS); empty: the standard set.
     eval_opponents: tuple[str, ...] = ()
 
@@ -412,7 +414,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     league_pool: list[dict] = []
     if cfg.init_checkpoint:
         ck = torch.load(cfg.init_checkpoint, weights_only=False)
-        policy, norm = load_policy(ck, env.obs_size, cfg.slot_keys, cfg.use_key)
+        policy, norm = load_policy(ck, env.obs_size, cfg.slot_keys, cfg.use_key, none_bias=cfg.head_bias)
         league_pool.append({k: v.clone() for k, v in policy.state_dict().items()})
     optim = torch.optim.Adam(policy.parameters(), lr=cfg.lr, eps=1e-5)
     league_net = Policy(env.obs_size, cfg.hidden, cfg.slot_keys, cfg.use_key)
