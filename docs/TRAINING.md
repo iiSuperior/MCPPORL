@@ -100,7 +100,9 @@ Six episodes of the policy at update 120 (`r00` to `r05`) matched vanilla
 on every field of every tick but one: on the killing tick, vanilla's dead
 player had dropped its sword (`ServerPlayer.die` drops the inventory), which
 resets the attack strength. The port now models it and all six match.
-Eight episodes of the final policy (`f00` to `f07`) are checked the same way.
+Eight episodes of the final policy (`f00` to `f07`: four against the hard
+bot, four self-play) then matched vanilla on every field of every tick on the
+first attempt. All 14 replays are part of `ctest`.
 
 ## Reproducing
 
