@@ -37,6 +37,7 @@ p.add_argument("--shield-never", type=float, default=0.0, help="share of shield 
 p.add_argument("--shield-panic", default="0,0", help="range of health at which shield users panic (min,max)")
 p.add_argument("--head-bias", type=float, default=4.0, help="initial 'no key' logit of heads added to --init")
 p.add_argument("--hotbar-flip", type=float, default=0.0, help="share of duels with the learner's hotbar reversed")
+p.add_argument("--shield-react", default="0,0", help="range of shield users' reaction ticks after a disable")
 p.add_argument("--eval", default="", help="evaluation opponents, comma-separated (default: the standard set)")
 a = p.parse_args()
 split = lambda v: tuple(x for x in v.split(",") if x)
@@ -46,5 +47,5 @@ cfg = PPOConfig(n_duels=a.duels, rollout=a.rollout, updates=a.updates, weapons=t
                 aim_dense=a.aids, reach_dense=a.aids, lr=a.lr, hotbar=split(a.hotbar), offhand=a.offhand,
                 opp_hotbar=split(a.opp_hotbar), opp_offhand=a.opp_offhand, slot_keys=a.slot_keys,
                 use_key=a.use_key, shielder=a.shielder, eval_opponents=split(a.eval),
-                head_bias=a.head_bias, hotbar_flip=a.hotbar_flip, shield_never=a.shield_never, shield_panic=tuple(float(x) for x in a.shield_panic.split(",")))
+                shield_react=tuple(float(x) for x in a.shield_react.split(",")), head_bias=a.head_bias, hotbar_flip=a.hotbar_flip, shield_never=a.shield_never, shield_panic=tuple(float(x) for x in a.shield_panic.split(",")))
 train(cfg, Path(a.out), log=lambda s: print(s, flush=True))

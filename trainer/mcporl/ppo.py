@@ -91,6 +91,8 @@ class PPOConfig:
     shield_lower: tuple[float, float] = (0.01, 0.06)
     shield_never: float = 0.0
     shield_panic: tuple[float, float] = (0.0, 0.0)
+    # Range of the shield user's reaction time after its shield is disabled (ticks).
+    shield_react: tuple[float, float] = (0.0, 0.0)
     # Share of duels (the first ones) whose learner gets `hotbar` in reverse
     # order: e.g. starting with the axe in hand instead of the sword.
     hotbar_flip: float = 0.0
@@ -249,6 +251,7 @@ class Opponents:
         self.crits = np.zeros(2 * n, np.uint8)
         self.lower = np.zeros(2 * n, np.float32)
         self.panic = np.zeros(2 * n, np.float32)
+        self.react = np.zeros(2 * n, np.float32)
         n_self = int(round(n * cfg.self_play))
         self.self_play = np.arange(n) < n_self
         for i in range(n):
@@ -286,6 +289,7 @@ class Opponents:
         self.crits[s] = self.rng.random() < 0.5
         self.lower[s] = 0.0 if self.rng.random() < c.shield_never else self.rng.uniform(*c.shield_lower)
         self.panic[s] = self.rng.uniform(*c.shield_panic)
+        self.react[s] = np.floor(self.rng.uniform(c.shield_react[0], c.shield_react[1] + 1))
         cheats = 0
         if self.who[i] == self.EXPERT:
             while cheats == 0:  # at least one cheat, any combination
@@ -304,7 +308,7 @@ class Opponents:
             env.tactician_each(tact, self.noise, self.turn, self.cheats, self.crits, actions)
         shield = other & (who == self.SHIELD)
         if shield.any():
-            env.shielder_each(shield, self.noise, self.turn, self.lower, self.panic, actions)
+            env.shielder_each(shield, self.noise, self.turn, self.lower, self.panic, actions, self.react)
         past = other & (who == self.LEAGUE)
         if past.any():
             if league is None:
@@ -368,7 +372,9 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
                                    np.full(2 * n, cheats, np.uint32), np.full(2 * n, crits, np.uint8), actions)
             elif kind == "shield":
                 env.shielder_each(mask, np.full(2 * n, noise, np.float32), np.full(2 * n, turn, np.float32),
-                                  np.full(2 * n, cheats, np.float32), np.full(2 * n, crits, np.float32), actions)
+                                  np.full(2 * n, cheats, np.float32), np.full(2 * n, crits, np.float32), actions,
+                                  np.full(2 * n, float(np.mean(cfg.shield_react)) if cfg.shield_react[1] > 0 else 0.0,
+                                          np.float32))
             else:
                 env.scripted(mask, 0 if kind == "dummy" else 1, noise, turn, actions)
         obs, _, done, stats = env.step(actions)

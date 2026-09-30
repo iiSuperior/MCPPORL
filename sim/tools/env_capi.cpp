@@ -78,10 +78,11 @@ void mcp_env_tactician_each(void* h, const unsigned char* mask, const float* noi
 
 // Shield users for every masked slot ([2n] arrays). See BatchEnv::shielder.
 void mcp_env_shielder_each(void* h, const unsigned char* mask, const float* noiseDeg, const float* turnDeg,
-                           const float* lowerRate, const float* panicHealth, float* actions) {
+                           const float* lowerRate, const float* panicHealth, const float* reactTicks,
+                           float* actions) {
     BatchEnv* e = static_cast<BatchEnv*>(h);
     for (int s = 0; s < 2 * e->size(); ++s)
-        if (mask[s]) e->shielder(s / 2, s % 2, noiseDeg[s], turnDeg[s], lowerRate[s], panicHealth[s], actions + s * kActionSize);
+        if (mask[s]) e->shielder(s / 2, s % 2, noiseDeg[s], turnDeg[s], lowerRate[s], panicHealth[s], reactTicks[s], actions + s * kActionSize);
 }
 
 // The hotbar (9 weapon indices, weapons.hpp order) and off hand slot s starts

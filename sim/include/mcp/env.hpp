@@ -127,6 +127,8 @@ struct BatchEnv {
         bool wtap = false;
         bool critPhase = false;  // going for a crit: sprint dropped until the swing
         int32_t shieldDown = 0;  // shield user: ticks left with the shield voluntarily lowered
+        int32_t stunned = 0;     // shield user: reaction ticks left after its shield was disabled
+        bool sawDisable = false;
     };
     std::vector<Tactic> tactics;
     std::vector<std::vector<DuelInput>> recorded;  // [2 * n]
@@ -574,9 +576,11 @@ struct BatchEnv {
     // main-hand weapon at full strength while it is down (and while the shield
     // is disabled). At or below `panicHealth` (its own health, which its player
     // sees) it panics: it never lowers the shield voluntarily again, and cuts
-    // short a lowered window. lowerRate 0: never lowers it at all. Needs a
-    // shield in the off hand (a loadout).
-    void shielder(int32_t i, int32_t k, float noiseDeg, float turnDeg, float lowerRate, float panicHealth, float* a) {
+    // short a lowered window. lowerRate 0: never lowers it at all. When its
+    // shield is disabled it takes `reactTicks` ticks to react (a human's
+    // reaction time) before it swings. Needs a shield in the off hand (a loadout).
+    void shielder(int32_t i, int32_t k, float noiseDeg, float turnDeg, float lowerRate, float panicHealth,
+                  float reactTicks, float* a) {
         const Duel& d = duels[i];
         const DuelPlayer& me = d.p[k];
         const Player& c = me.client;
@@ -605,9 +609,14 @@ struct BatchEnv {
         } else if (uniform() < static_cast<double>(lowerRate)) {
             T.shieldDown = 10 + static_cast<int32_t>(uniform() * 31.0);
         }
-        bool down = T.shieldDown > 0 || me.cooldown > 0;
+        bool disabled = me.cooldown > 0;
+        if (disabled && !T.sawDisable) T.stunned = static_cast<int32_t>(reactTicks);
+        T.sawDisable = disabled;
+        bool down = T.shieldDown > 0 || disabled;
         a[8] = down ? 0.0F : 1.0F;
-        if (down && !me.usingItem) {
+        if (T.stunned > 0) {
+            T.stunned--;
+        } else if (down && !me.usingItem) {
             float delay = attackStrengthDelay(me.server.attrWeapon);
             float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
             a[4] = (r.canHit() && strength >= 1.0F && m < 6.0F) ? 1.0F : 0.0F;
