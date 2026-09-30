@@ -30,6 +30,8 @@ p.add_argument("--count", type=int, default=6)
 p.add_argument("--out", default=str(REPO / "oracle" / "replays"))
 p.add_argument("--prefix", default="r")
 p.add_argument("--seed", type=int, default=7)
+p.add_argument("--opponent", choices=("aim", "tactician"), default="aim",
+               help="scripted opponent of the non-self-play episodes (the tactician plays fair; crits in half)")
 a = p.parse_args()
 
 ck = torch.load(a.checkpoint, weights_only=False)
@@ -55,7 +57,13 @@ while any(env.record_state(i) == 1 for i in range(n)):
     with torch.no_grad():
         c, t, _, _ = policy.act(torch.from_numpy(norm(obs)), deterministic=False)
     actions[:] = to_env_actions(c.numpy(), t.numpy())
-    env.scripted((~learner).astype(np.uint8), 1, 1.5, 45.0, actions)
+    mask = (~learner).astype(np.uint8)
+    if a.opponent == "aim":
+        env.scripted(mask, 1, 1.5, 45.0, actions)
+    else:
+        crits = (np.arange(2 * n) // 2 % 4 >= 2).astype(np.uint8)
+        env.tactician_each(mask, np.full(2 * n, 1.5, np.float32), np.full(2 * n, 45.0, np.float32),
+                           np.zeros(2 * n, np.uint32), crits, actions)
     obs, _, done, stats = env.step(actions)
     for i in np.nonzero(done)[0]:
         if i not in outcome:
@@ -71,12 +79,13 @@ for i in range(n):
         print(f"duel {i}: skipped ({nonparity} unreproducible random draw(s) or unsupported state)")
         continue
     winner, ticks, how = outcome[i]
-    kind = "bot" if vs_bot[i] else "self"
+    kind = ("bot" if a.opponent == "aim" else "tact") if vs_bot[i] else "self"
     who = {-1: "draw", 0: "A wins", 1: "B wins"}[winner]
     end = "death" if state == 2 else ("arena exit" if how == 1 else "time limit")
     name = f"{a.prefix}{i:02d}_{kind}"
     title = (f"Recorded episode: {Path(a.checkpoint).parent.name} update {ck['update']}, "
-             f"{'learner vs hard aim bot' if vs_bot[i] else 'self-play'}; {who} after {ticks} ticks ({end})")
+             f"{('learner vs hard aim bot' if a.opponent == 'aim' else 'learner vs fair tactician' + (' (crits)' if i % 4 >= 2 else '')) if vs_bot[i] else 'self-play'}; "
+             f"{who} after {ticks} ticks ({end})")
     path = out / f"{name}.txt"
     env.export(i, path, title)
     # Round trip: the exported text must replay to the same length in the simulator.
