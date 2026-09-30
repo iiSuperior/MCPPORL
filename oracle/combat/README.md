@@ -55,13 +55,19 @@ after the hit; "displacement" is B's z-change over that tick.
 | `27_kill` | Sprint hit on 1 health: the episode ends on the killing tick, knockback included | 1.0 | 0.7 |
 | `28_trade_kill` | Both on 1 health, same-tick clicks: A's packets come first, B dies and B's hit is ignored | 1.0 (A survives) | 0.7 |
 | `29_crit_kill` | A crit on exactly 1.5 health: health reaches 0.0 | 1.5 | as standing |
+| `30_lagged_whiff` | B's hitbox is 2.66 from A's eye, but A sees B 0.42 further back (3.07): the click whiffs | none | none |
 
 Scenarios can set `health=` on a `start` line; a scenario ends on the tick a
 player dies. Overlapping players' server copies push each other (see 11, 13,
 15, 16 once A catches up with B).
 
 Every combat trace also records each tick's crosshair pick (type and hit
-location) and `missTime`. Natural health regeneration is off in the oracle
+location), `missTime`, and each client's view of the other player
+(`view.x/y/z/yRot`, the remote player's interpolated position, and
+`view.recv`, the tracker packets delivered before the tick: 1 `Pos`,
+2 `PosRot`, 4 `Rot`, 8 `PositionSync`). Picks test that view, so clicks on a
+moving opponent land one to two ticks later than they would against its true
+position; 17, 18, 20 and 28 click when the view is in reach. Natural health regeneration is off in the oracle
 (it depends on hunger).
 
 Two traps found while building these, both harness artifacts rather than

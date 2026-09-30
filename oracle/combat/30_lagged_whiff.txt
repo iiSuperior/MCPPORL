@@ -1,0 +1,12 @@
+# B walks toward A; A clicks when B's hitbox is 2.66 blocks from A's eye,
+# well inside the 3.0 reach. But A's client sees B where the tracker's packets
+# and the remote player's interpolation put it, 0.42 blocks further back
+# (3.07 away): the pick misses and the click whiffs. Clicks are resolved
+# against what the player sees, not where the opponent is.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=4.5 yaw=180
+20 idle | idle
+5 idle | w
+1 attack | w
+6 idle | w
+20 idle | idle
