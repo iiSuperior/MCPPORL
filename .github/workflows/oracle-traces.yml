@@ -59,7 +59,7 @@ jobs:
         run: |
           mkdir -p run && cd run
           status=0
-          java --add-opens java.base/java.lang=ALL-UNNAMED -Dmcporl.version="$(cat ../version_id)" \
+          timeout 600 java --add-opens java.base/java.lang=ALL-UNNAMED -Dmcporl.version="$(cat ../version_id)" \
             -cp "../game.jar:../libs/*:../harness" mcporl.oracle.OracleMain ../../oracle/scenarios ../traces ../../oracle/combat \
             > oracle.log 2>&1 || status=$?
           grep -E "\[(oracle|diag)\]|Exception|Error|^\s+at (mcporl|net\.minecraft)" oracle.log | head -300 || true
