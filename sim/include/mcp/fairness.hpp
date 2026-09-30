@@ -33,6 +33,8 @@ struct AgentAction {
     float yaw = 0.0F, pitch = 0.0F;  // desired absolute rotation
     bool click = false;              // press the attack key (at most one click per tick)
     bool holdAttack = false;         // keep the attack key down while the tick samples it
+    int32_t slot = -1;               // a hotbar key (0-8) pressed this tick, or -1
+    bool use = false;                // the use key is down (a shield is raised while held)
 };
 
 struct FairnessStats {
@@ -61,6 +63,8 @@ MCP_HD inline DuelInput applyFairness(const FairnessCaps& caps, float fromYaw, f
     in.yaw = fromYaw + dYaw;
     in.pitch = mth::clamp(fromPitch + dPitch, -90.0F, 90.0F);
     in.attack = a.click;
+    in.slot = a.slot >= 0 && a.slot < 9 ? a.slot : -1;  // one key press per tick
+    in.use = a.use;
     in.attackHeld = a.holdAttack && (a.click || heldLastTick);
     if (a.holdAttack && !in.attackHeld) stats.holdsRejected++;
     return in;

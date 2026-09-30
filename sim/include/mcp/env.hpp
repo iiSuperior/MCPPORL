@@ -41,21 +41,30 @@ struct EnvConfig {
 };
 
 // Per-slot action, as floats: forward/back (-1, 0, 1), left/right (-1, 0, 1),
-// jump, sprint, click (0 or 1, a tap), then the turn this tick in degrees
-// (yaw, pitch; the fairness cap still applies).
-constexpr int32_t kActionSize = 7;
+// jump, sprint, click (0 or 1, a tap), the turn this tick in degrees (yaw,
+// pitch; the fairness cap still applies), a hotbar key (-1 none, else 0-8)
+// and the use key (0 or 1, held while 1).
+constexpr int32_t kActionSize = 9;
 // Expert-panel cheats for scripted opponents (BatchEnv::tactician).
 constexpr uint32_t kCheatSnapAim = 1, kCheatTrueSight = 2, kCheatRangeHit = 4;
-constexpr int32_t kObsSize = 34;
+constexpr int32_t kObsSize = 50;
 // Per finished episode: winner (-1 draw), ticks, truncated, then per slot the counters
 // of EpisodeStats::Slot, in order.
-constexpr int32_t kSlotStats = 9;
+constexpr int32_t kSlotStats = 18;
 constexpr int32_t kEpisodeStatsSize = 3 + 2 * kSlotStats;
 
 struct EpisodeStats {
     struct Slot {
         float clicks = 0, attacks = 0, hits = 0, damageDealt = 0, damageTaken = 0;
         float aimErrorSum = 0, aimTicks = 0, advantageTicks = 0, disadvantageTicks = 0;
+        // Hotbar and shield play: swaps (a hotbar key that changed the held
+        // item), swaps to an axe while the opponent's shield was up / down as this
+        // player saw it, shields disabled, hits the opponent's shield blocked,
+        // damaging hits with a non-axe while the shield was down, attacks sent
+        // with an axe, swaps from an axe while the opponent's shield was disabled,
+        // and ticks holding the hotbar's highest-damage item.
+        float swaps = 0, axeSwapsRaised = 0, axeSwapsLowered = 0, disables = 0, blockedHits = 0, swordHitsLowered = 0,
+              axeAttacks = 0, swapBacks = 0, bestTicks = 0;
     };
     Slot s[2];
 };
@@ -81,6 +90,14 @@ inline float aimError(const DuelPlayer& me) {
     aimAt(eyeOf(me.client), chestOf(me.view), yaw, pitch);
     float dy = duel::wrapDegrees(yaw - me.client.yRot), dp = pitch - me.client.xRot;
     return std::sqrt(dy * dy + dp * dp);
+}
+
+inline bool isAxe(Weapon w) { return stats(w).disableSeconds > 0.0F; }
+
+// A scripted action with nothing pressed (no hotbar key).
+inline void clearAction(float* a) {
+    for (int32_t j = 0; j < kActionSize; ++j) a[j] = 0.0F;
+    a[7] = -1.0F;
 }
 
 }  // namespace env
@@ -109,17 +126,24 @@ struct BatchEnv {
         int32_t strafeDir = 1, strafeTicks = 0, jumpCooldown = 0, attackCooldown = 0, critFallTicks = 0;
         bool wtap = false;
         bool critPhase = false;  // going for a crit: sprint dropped until the swing
+        int32_t shieldDown = 0;  // shield user: ticks left with the shield voluntarily lowered
     };
     std::vector<Tactic> tactics;
     std::vector<std::vector<DuelInput>> recorded;  // [2 * n]
     std::vector<DuelStart> recordedStarts;         // [2 * n], the recorded episode's starts
     std::vector<uint8_t> recordedDone;             // the recorded episode finished (not truncated)
     std::vector<int32_t> recordedNonParity;        // random draws vanilla makes differently (duel.hpp)
+    // Per-slot loadouts ([2n]): when set, the slot starts every episode with
+    // this hotbar and off hand instead of a weapon drawn from weaponMask.
+    std::vector<uint8_t> hasLoadout;
+    std::vector<DuelStart> loadouts;
+    // Ticks the opponent's shield has been up as each slot's client sees it ([2n]).
+    std::vector<int32_t> viewRaisedTicks;
 
     BatchEnv(int32_t n, uint64_t seed, std::vector<float> table, const EnvConfig& c)
         : cfg(c), world{-60, c.arenaRadius, 4}, sinTab(std::move(table)), duels(n), rewards(n), ticks(n, 0), stats(n), starts(2 * n), rng{seed},
           recording(n, 0), cheats(2 * n, 0), recordedCheat(n, 0), tactics(2 * n), recorded(2 * n), recordedStarts(2 * n), recordedDone(n, 0),
-          recordedNonParity(n, 0) {
+          recordedNonParity(n, 0), hasLoadout(2 * n, 0), loadouts(2 * n), viewRaisedTicks(2 * n, 0) {
         for (int32_t i = 0; i < n; ++i) resetDuel(i);
     }
 
@@ -155,6 +179,13 @@ struct BatchEnv {
         b.yaw = std::round(duel::wrapDegrees(face + 180.0F) + static_cast<float>((uniform() - 0.5) * 60.0));
         a.hotbar[0] = drawWeapon();
         b.hotbar[0] = cfg.sameWeapon ? a.hotbar[0] : drawWeapon();
+        for (int32_t k = 0; k < 2; ++k) {
+            DuelStart& s = k == 0 ? a : b;
+            if (!hasLoadout[2 * i + k]) continue;
+            for (int32_t h = 0; h < 9; ++h) s.hotbar[h] = loadouts[2 * i + k].hotbar[h];
+            s.offhand = loadouts[2 * i + k].offhand;
+        }
+        viewRaisedTicks[2 * i] = viewRaisedTicks[2 * i + 1] = 0;
         duels[i].reset(a, b, world, rng.next());
         rewards[i].reset(duels[i]);
         ticks[i] = 0;
@@ -231,6 +262,23 @@ struct BatchEnv {
         o[n++] = fwd(-c.x, -c.z) / static_cast<float>(R);
         o[n++] = side(-c.x, -c.z) / static_cast<float>(R);
         o[n++] = static_cast<float>((R - std::fmax(std::fabs(c.x), std::fabs(c.z))) / R);
+        // Hotbar and shields: which of the first three slots is selected, what
+        // those slots hold (damage, and whether it disables shields), the own
+        // shield (in the off hand, raised, its cooldown), the opponent's (raised
+        // as seen, and for how long) and whether it holds an axe or a shield.
+        for (int32_t h = 0; h < 3; ++h) o[n++] = me.selected == h ? 1.0F : 0.0F;
+        for (int32_t h = 0; h < 3; ++h) {
+            Weapon w = me.server.hotbar[h];
+            o[n++] = w == Weapon::Hand ? 0.0F : static_cast<float>(attackDamageAttribute(w)) / 10.0F;
+            o[n++] = env::isAxe(w) ? 1.0F : 0.0F;
+        }
+        o[n++] = mcp::stats(me.server.offhand).blocksAttacks ? 1.0F : 0.0F;
+        o[n++] = me.usingItem ? 1.0F : 0.0F;
+        o[n++] = me.cooldown > 0 ? static_cast<float>(me.cooldown) / static_cast<float>(me.cooldownDuration) : 0.0F;
+        o[n++] = me.viewUsing ? 1.0F : 0.0F;
+        o[n++] = std::fmin(static_cast<float>(viewRaisedTicks[2 * i + k]) / 10.0F, 1.0F);
+        o[n++] = env::isAxe(op.server.mainHand()) ? 1.0F : 0.0F;
+        o[n++] = mcp::stats(op.server.offhand).blocksAttacks ? 1.0F : 0.0F;
     }
 
     void observeAll(float* obs) const {
@@ -253,6 +301,8 @@ struct BatchEnv {
         act.holdAttack = false;
         act.yaw = me.client.yRot + (std::isfinite(a[5]) ? a[5] : 0.0F);
         act.pitch = me.client.xRot + (std::isfinite(a[6]) ? a[6] : 0.0F);
+        act.slot = std::isfinite(a[7]) && a[7] > -0.5F ? static_cast<int32_t>(std::lround(std::fmin(a[7], 8.0F))) : -1;
+        act.use = a[8] > 0.5F;
         return act;
     }
 
@@ -284,6 +334,16 @@ struct BatchEnv {
                 if (recording[i] == 1) recorded[2 * i + k].push_back(in[k]);
             }
             float before[2] = {d.p[0].server.health, d.p[1].server.health};
+            int32_t selBefore[2], cdBefore[2];
+            bool raisedSeen[2], blockingBefore[2];
+            Weapon heldBefore[2];
+            for (int32_t k = 0; k < 2; ++k) {
+                selBefore[k] = d.p[k].selected;
+                heldBefore[k] = duel::clientInHand(d.p[k], false);
+                raisedSeen[k] = d.p[k].viewUsing;
+                blockingBefore[k] = d.p[k].server.blocking();
+                cdBefore[k] = d.p[k].server.shieldCooldown;
+            }
             d.step(in[0], in[1], world, sinTab.data());
             bool dead = d.done();
             int32_t winner = d.winner();
@@ -322,6 +382,23 @@ struct BatchEnv {
                 if (d.p[k].sentAttack && dealt > 0.0F) s.hits += 1.0F;
                 s.damageDealt += dealt;
                 s.damageTaken += before[k] - d.p[k].server.health;
+                Weapon held = duel::clientInHand(d.p[k], false);
+                if (d.p[k].selected != selBefore[k] && held != heldBefore[k]) {
+                    s.swaps += 1.0F;
+                    if (env::isAxe(held)) (raisedSeen[k] ? s.axeSwapsRaised : s.axeSwapsLowered) += 1.0F;
+                    if (env::isAxe(heldBefore[k]) && !env::isAxe(held) && cdBefore[1 - k] > 0) s.swapBacks += 1.0F;
+                }
+                if (d.p[1 - k].server.shieldCooldown > cdBefore[1 - k]) s.disables += 1.0F;
+                if (d.p[k].sentAttack) {
+                    if (env::isAxe(heldBefore[k])) s.axeAttacks += 1.0F;
+                    if (blockingBefore[1 - k] && dealt <= 0.0F) s.blockedHits += 1.0F;
+                    if (dealt > 0.0F && !raisedSeen[k] && !env::isAxe(heldBefore[k])) s.swordHitsLowered += 1.0F;
+                }
+                {
+                    double best = 0.0;
+                    for (Weapon w : d.p[k].server.hotbar) best = std::fmax(best, attackDamageAttribute(w));
+                    if (attackDamageAttribute(held) >= best) s.bestTicks += 1.0F;
+                }
                 if (!dead) {
                     s.aimErrorSum += env::aimError(d.p[k]);
                     s.aimTicks += 1.0F;
@@ -343,6 +420,9 @@ struct BatchEnv {
                     float* q = e + 3 + k * kSlotStats;
                     q[0] = s.clicks; q[1] = s.attacks; q[2] = s.hits; q[3] = s.damageDealt; q[4] = s.damageTaken;
                     q[5] = s.aimErrorSum; q[6] = s.aimTicks; q[7] = s.advantageTicks; q[8] = s.disadvantageTicks;
+                    q[9] = s.swaps; q[10] = s.axeSwapsRaised; q[11] = s.axeSwapsLowered; q[12] = s.disables;
+                    q[13] = s.blockedHits; q[14] = s.swordHitsLowered; q[15] = s.axeAttacks; q[16] = s.swapBacks;
+                    q[17] = s.bestTicks;
                 }
                 if (recording[i] == 1) {
                     recordedDone[i] = dead ? 1 : 0;  // replays end at a death; an arena exit just stops
@@ -352,6 +432,8 @@ struct BatchEnv {
                 resetDuel(i);
             }
         }
+        for (int32_t s = 0; s < 2 * size(); ++s)
+            viewRaisedTicks[s] = duels[s / 2].p[s % 2].viewUsing ? viewRaisedTicks[s] + 1 : 0;
         observeAll(obs);
     }
 
@@ -363,7 +445,7 @@ struct BatchEnv {
     void scripted(int32_t i, int32_t k, int32_t kind, float noiseDeg, float turnDeg, float* a) {
         const Duel& d = duels[i];
         const DuelPlayer& me = d.p[k];
-        for (int32_t j = 0; j < kActionSize; ++j) a[j] = 0.0F;
+        env::clearAction(a);
         float yaw, pitch;
         env::aimAt(env::eyeOf(me.client), env::chestOf(me.view), yaw, pitch);
         yaw += static_cast<float>((uniform() - 0.5) * 2.0) * noiseDeg;
@@ -406,7 +488,7 @@ struct BatchEnv {
         const DuelPlayer& me = d.p[k];
         const Player& c = me.client;
         Tactic& T = tactics[2 * i + k];
-        for (int32_t j = 0; j < kActionSize; ++j) a[j] = 0.0F;
+        env::clearAction(a);
         bool trueSight = (cheatFlags & kCheatTrueSight) != 0;
         const Player& op = d.p[1 - k].client;
         Vec3 target = trueSight ? Vec3{op.x, op.y, op.z} : me.view.pos;
@@ -483,6 +565,47 @@ struct BatchEnv {
             }
         }
         if (T.critPhase && !c.onGround) a[3] = 0.0F;  // no sprint key until the crit swing
+    }
+
+    // A shield user (plays fair: turn cap, the lagged view, the crosshair
+    // pick): walks in to ~2.8 blocks aiming at the chest of what it sees and
+    // keeps its off-hand shield raised; each tick, with probability
+    // `lowerRate`, it lowers it voluntarily for 10 to 40 ticks, and swings its
+    // main-hand weapon at full strength while it is down (and while the shield
+    // is disabled). Needs a shield in the off hand (a loadout).
+    void shielder(int32_t i, int32_t k, float noiseDeg, float turnDeg, float lowerRate, float* a) {
+        const Duel& d = duels[i];
+        const DuelPlayer& me = d.p[k];
+        const Player& c = me.client;
+        Tactic& T = tactics[2 * i + k];
+        env::clearAction(a);
+        float yaw, pitch;
+        env::aimAt(env::eyeOf(c), env::chestOf(me.view), yaw, pitch);
+        yaw += static_cast<float>((uniform() - 0.5) * 2.0) * noiseDeg;
+        pitch += static_cast<float>((uniform() - 0.5) * 2.0) * noiseDeg;
+        float dy = duel::wrapDegrees(yaw - c.yRot), dp = pitch - c.xRot;
+        float m = std::sqrt(dy * dy + dp * dp);
+        if (m > turnDeg) {
+            dy *= turnDeg / m;
+            dp *= turnDeg / m;
+        }
+        a[5] = dy;
+        a[6] = dp;
+        reach::ReachState r = reachOf(d, k);
+        a[0] = r.mine > 2.8 ? 1.0F : 0.0F;
+        a[3] = r.mine > 3.5 ? 1.0F : 0.0F;
+        if (T.shieldDown > 0) {
+            T.shieldDown--;
+        } else if (uniform() < static_cast<double>(lowerRate)) {
+            T.shieldDown = 10 + static_cast<int32_t>(uniform() * 31.0);
+        }
+        bool down = T.shieldDown > 0 || me.cooldown > 0;
+        a[8] = down ? 0.0F : 1.0F;
+        if (down && !me.usingItem) {
+            float delay = attackStrengthDelay(me.server.attrWeapon);
+            float strength = mth::clamp((static_cast<float>(me.clientAttackStrengthTicker) + 0.5F) / delay, 0.0F, 1.0F);
+            a[4] = (r.canHit() && strength >= 1.0F && m < 6.0F) ? 1.0F : 0.0F;
+        }
     }
 
     // Record duel i's next episode from its start (the duel restarts now).

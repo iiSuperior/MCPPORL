@@ -95,12 +95,29 @@ public final class OraclePlayer extends Player {
         return java.util.Objects.requireNonNullElse(this.usingItemHand, net.minecraft.world.InteractionHand.MAIN_HAND);
     }
 
+    /**
+     * ClientPacketListener.handleSetEntityData for this player. Only data from the
+     * server runs LocalPlayer's use-state sync: the copy lives in a server level,
+     * so its own startUsingItem also sets the flags (and fires the callback),
+     * which a real client never does.
+     */
+    public void receiveEntityData(java.util.List<net.minecraft.network.syncher.SynchedEntityData.DataValue<?>> values) {
+        receivingServerData = true;
+        try {
+            getEntityData().assignValues(values);
+        } finally {
+            receivingServerData = false;
+        }
+    }
+
+    private boolean receivingServerData;
+
     // LocalPlayer.onSyncedDataUpdated: follow the server's use state (e.g. a
     // shield the server disabled, or a use the client did not predict).
     @Override
     public void onSyncedDataUpdated(final net.minecraft.network.syncher.EntityDataAccessor<?> accessor) {
         super.onSyncedDataUpdated(accessor);
-        if (DATA_LIVING_ENTITY_FLAGS.equals(accessor)) {
+        if (receivingServerData && DATA_LIVING_ENTITY_FLAGS.equals(accessor)) {
             boolean serverUsingItem = (this.entityData.get(DATA_LIVING_ENTITY_FLAGS) & 1) > 0;
             net.minecraft.world.InteractionHand serverUsingHand = (this.entityData.get(DATA_LIVING_ENTITY_FLAGS) & 2) > 0
                     ? net.minecraft.world.InteractionHand.OFF_HAND : net.minecraft.world.InteractionHand.MAIN_HAND;

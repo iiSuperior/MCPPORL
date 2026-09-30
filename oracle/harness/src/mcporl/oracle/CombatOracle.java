@@ -684,7 +684,7 @@ public final class CombatOracle {
                 s.client.lerpMotion(wire(m.movement()));  // the client sees the LpVec3-quantised value
                 s.gotVelocity = true;
             } else if (p instanceof ClientboundSetEntityDataPacket d && d.id() == self) {
-                s.client.getEntityData().assignValues(d.packedItems());
+                s.client.receiveEntityData(d.packedItems());
             } else if (p instanceof ClientboundSetEntityDataPacket d && d.id() == otherId) {
                 requireView(s, p).getEntityData().assignValues(d.packedItems());  // e.g. the raised shield
             } else if (p instanceof ClientboundSetEquipmentPacket e && e.getEntity() == otherId) {

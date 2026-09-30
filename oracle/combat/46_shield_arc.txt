@@ -1,12 +1,12 @@
 # The blocking arc (90 degrees either side of the head yaw, horizontal only). B
-# turned 100 degrees from A: not blocked. B turned 80 degrees from A the other
-# way: blocked.
+# turned 80 degrees away from A: blocked (no knockback, so A stays in reach).
+# B turned 100 degrees away the other way: the hit lands.
 start A item=diamond_sword
-start B z=3.0 yaw=80 offhand=shield
+start B z=3.0 yaw=260 offhand=shield
 20 idle | idle
 8  idle | use
 1  tap  | use
-20 idle | use
-3  idle | use yaw=260
+10 idle | use
+10 idle | use yaw=80
 1  tap  | use
 10 idle | use

@@ -1,13 +1,15 @@
 # B raises a shield (off hand) and keeps the use key down. A hit on the 4th use
-# tick lands (the shield blocks after 5 ticks of use); one 16 ticks later is fully
-# blocked: no damage or knockback, the shield takes floor(1 + 7) durability, and B
-# still gets the damage cooldown. After B lowers it, a full hit lands again.
+# tick lands (the shield blocks after 5 ticks of use); A steps back into reach
+# and a hit 16 ticks later is fully blocked: no damage or knockback, the shield
+# takes floor(1 + 7) durability, and B still gets the damage cooldown. After B
+# lowers it, a full hit lands again.
 start A item=diamond_sword
 start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 3  idle | use
 1  tap  | use
-15 idle | use
+5  w    | use
+10 idle | use
 1  tap  | use
 5  idle | use
 15 idle | idle

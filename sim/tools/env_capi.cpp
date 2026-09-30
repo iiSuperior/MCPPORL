@@ -76,6 +76,30 @@ void mcp_env_tactician_each(void* h, const unsigned char* mask, const float* noi
         if (mask[s]) e->tactician(s / 2, s % 2, noiseDeg[s], turnDeg[s], flags[s], crits[s] != 0, actions + s * kActionSize);
 }
 
+// Shield users for every masked slot ([2n] arrays). See BatchEnv::shielder.
+void mcp_env_shielder_each(void* h, const unsigned char* mask, const float* noiseDeg, const float* turnDeg,
+                           const float* lowerRate, float* actions) {
+    BatchEnv* e = static_cast<BatchEnv*>(h);
+    for (int s = 0; s < 2 * e->size(); ++s)
+        if (mask[s]) e->shielder(s / 2, s % 2, noiseDeg[s], turnDeg[s], lowerRate[s], actions + s * kActionSize);
+}
+
+// The hotbar (9 weapon indices, weapons.hpp order) and off hand slot s starts
+// every episode with, from the next reset on; hotbar == nullptr clears it.
+void mcp_env_set_loadout(void* h, int s, const int* hotbar, int offhand) {
+    BatchEnv* e = static_cast<BatchEnv*>(h);
+    if (hotbar == nullptr) {
+        e->hasLoadout[s] = 0;
+        return;
+    }
+    e->hasLoadout[s] = 1;
+    for (int k = 0; k < 9; ++k) e->loadouts[s].hotbar[k] = static_cast<Weapon>(hotbar[k]);
+    e->loadouts[s].offhand = static_cast<Weapon>(offhand);
+}
+
+// Restart duel i now (e.g. after changing loadouts).
+void mcp_env_reset_duel(void* h, int i) { static_cast<BatchEnv*>(h)->resetDuel(i); }
+
 void mcp_env_record(void* h, int i) { static_cast<BatchEnv*>(h)->record(i); }
 
 // 0 not recording, 1 in progress, 2 finished (by a death), 3 truncated.
