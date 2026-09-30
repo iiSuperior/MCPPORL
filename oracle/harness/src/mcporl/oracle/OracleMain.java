@@ -91,7 +91,9 @@ public final class OracleMain {
         }
         List<String> combatFailures = new ArrayList<>();
         if (args.length > 2) {
-            CombatOracle.runAll(server, Path.of(args[2]).toAbsolutePath(), outDir, combatFailures);
+            // args[3]: recorded training episodes (oracle/replays), traced into outDir/replays.
+            Path replays = args.length > 3 ? Path.of(args[3]).toAbsolutePath() : null;
+            CombatOracle.runAll(server, Path.of(args[2]).toAbsolutePath(), outDir, combatFailures, replays);
         }
         int total = failures + combatFailures.size();
         server.halt(false);

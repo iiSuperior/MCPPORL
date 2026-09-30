@@ -812,7 +812,7 @@ public final class CombatOracle {
         return true;
     }
 
-    static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
+    static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures, Path replayDir) throws IOException {
         java.util.concurrent.CompletableFuture<Void> forced = new java.util.concurrent.CompletableFuture<>();
         server.execute(() -> {
             try {
@@ -828,6 +828,18 @@ public final class CombatOracle {
         } catch (Exception e) {
             throw new IOException(e);
         }
+        runScenarios(server, dir, outDir, failures);
+        if (replayDir != null && Files.isDirectory(replayDir)) {
+            Path replayOut = outDir.resolve("replays");
+            Files.createDirectories(replayOut);
+            runScenarios(server, replayDir, replayOut, failures);
+        }
+        // Last: it adds blocks to the arena.
+        pickProbeLast(server, outDir, failures);
+    }
+
+    /** Every combat scenario in `dir`, one trace each in `outDir`. The arena must be settled. */
+    static void runScenarios(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
         List<Path> files;
         try (var stream = Files.list(dir)) {
             files = stream.filter(p -> p.toString().endsWith(".txt")).sorted().toList();
@@ -852,7 +864,9 @@ public final class CombatOracle {
                 e.getCause().printStackTrace(System.out);
             }
         }
-        // Last: it adds blocks to the arena.
+    }
+
+    private static void pickProbeLast(MinecraftServer server, Path outDir, List<String> failures) {
         java.util.concurrent.CompletableFuture<Void> probe = new java.util.concurrent.CompletableFuture<>();
         server.execute(() -> {
             try {

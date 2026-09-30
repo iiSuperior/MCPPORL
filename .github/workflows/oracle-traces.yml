@@ -11,6 +11,7 @@ on:
       - "oracle/harness/**"
       - "oracle/scenarios/**"
       - "oracle/combat/**"
+      - "oracle/replays/**"
       - ".github/workflows/oracle-traces.yml"
 
 permissions:
@@ -60,7 +61,7 @@ jobs:
           mkdir -p run && cd run
           status=0
           timeout 600 java --add-opens java.base/java.lang=ALL-UNNAMED -Dmcporl.version="$(cat ../version_id)" \
-            -cp "../game.jar:../libs/*:../harness" mcporl.oracle.OracleMain ../../oracle/scenarios ../traces ../../oracle/combat \
+            -cp "../game.jar:../libs/*:../harness" mcporl.oracle.OracleMain ../../oracle/scenarios ../traces ../../oracle/combat ../../oracle/replays \
             > oracle.log 2>&1 || status=$?
           grep -E "\[(oracle|diag)\]|Exception|Error|^\s+at (mcporl|net\.minecraft)" oracle.log | head -300 || true
           if [ "$status" -ne 0 ]; then echo "--- last 80 log lines"; tail -80 oracle.log; exit "$status"; fi
@@ -68,7 +69,8 @@ jobs:
       - name: Print traces
         working-directory: work
         run: |
-          for f in traces/*.jsonl; do
+          for f in traces/*.jsonl traces/replays/*.jsonl; do
+            [ -f "$f" ] || continue
             echo "$f: $(($(wc -l < "$f") - 1)) ticks, last: $(tail -1 "$f" | cut -c1-220)"
           done
           echo "BEGIN-TRACES"

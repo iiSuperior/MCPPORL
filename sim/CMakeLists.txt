@@ -29,6 +29,11 @@ target_link_libraries(replay PRIVATE mcp_sim)
 add_executable(duel_replay tools/duel_replay.cpp)
 target_link_libraries(duel_replay PRIVATE mcp_sim)
 
+# The training environment as a shared library for the Python trainer (ctypes).
+add_library(mcp_env SHARED tools/env_capi.cpp)
+target_link_libraries(mcp_env PRIVATE mcp_sim)
+set_target_properties(mcp_env PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 add_executable(bench_tick tools/bench_tick.cpp)
 target_link_libraries(bench_tick PRIVATE mcp_sim)
 
@@ -61,6 +66,10 @@ if(BUILD_TESTING)
   add_executable(test_reach tests/test_reach.cpp)
   target_link_libraries(test_reach PRIVATE mcp_sim)
   add_test(NAME reach COMMAND test_reach)
+
+  add_executable(test_env tests/test_env.cpp)
+  target_link_libraries(test_env PRIVATE mcp_sim)
+  add_test(NAME env COMMAND test_env ${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin)
 
   add_executable(test_reward tests/test_reward.cpp)
   target_link_libraries(test_reward PRIVATE mcp_sim)
@@ -103,6 +112,21 @@ if(BUILD_TESTING)
                  -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -DSCENARIO=${scn}
                  -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/../oracle/traces/${name}.jsonl
                  -DOUT=${CMAKE_CURRENT_BINARY_DIR}/sim_traces/${name}.jsonl
+                 -DDIFF=${CMAKE_CURRENT_SOURCE_DIR}/../tools/tracediff.py
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity.cmake)
+    endforeach()
+
+    # Replays: recorded training episodes (oracle/replays) replayed through
+    # vanilla; the simulator must reproduce vanilla's trace bit for bit.
+    file(GLOB MCP_REPLAYS ${CMAKE_CURRENT_SOURCE_DIR}/../oracle/replays/*.txt)
+    foreach(scn ${MCP_REPLAYS})
+      get_filename_component(name ${scn} NAME_WE)
+      add_test(NAME replay_${name}
+               COMMAND ${CMAKE_COMMAND}
+                 -DREPLAY=$<TARGET_FILE:duel_replay> -DPYTHON=${Python3_EXECUTABLE}
+                 -DSIN=${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin -DSCENARIO=${scn}
+                 -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/../oracle/traces/replays/${name}.jsonl
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/sim_traces/replays/${name}.jsonl
                  -DDIFF=${CMAKE_CURRENT_SOURCE_DIR}/../tools/tracediff.py
                  -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity.cmake)
     endforeach()

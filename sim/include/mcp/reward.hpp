@@ -66,14 +66,16 @@ struct DuelRewards {
 
     // After Duel::step (and Duel::deliver unless the episode ended): the
     // rewards for the transition just taken.
-    MCP_HD void step(const Duel& d, const RewardWeights& w, float out[2]) {
+    MCP_HD void step(const Duel& d, const RewardWeights& w, float out[2]) { step(d, w, out, d.done(), d.winner()); }
+
+    // The same with the episode's outcome given: an environment rule (such as
+    // leaving the arena) can end an episode the duel itself has not.
+    MCP_HD void step(const Duel& d, const RewardWeights& w, float out[2], bool done, int32_t winner) {
         float lost[2];
         for (int32_t i = 0; i < 2; ++i) {
             lost[i] = health[i] - d.p[i].server.health;
             health[i] = d.p[i].server.health;
         }
-        bool done = d.done();
-        int32_t winner = d.winner();
         for (int32_t i = 0; i < 2; ++i) {
             float r = w.damageDealt * lost[1 - i] - w.damageTaken * lost[i];
             if (done) r += winner == i ? w.win : (winner == 1 - i ? -w.loss : 0.0F);
