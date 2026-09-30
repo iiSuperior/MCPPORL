@@ -73,3 +73,7 @@ Phase 1 in progress. Target version: **26.3** (unobfuscated, Java 25).
   position syncs) and the client's remote-player interpolation, matched bit
   for bit against the oracle. Clicks aim at that view, so a moving opponent
   is hit where it is seen, about a tick late.
+- A PPO agent trained in the simulator (`docs/TRAINING.md`) learns to fight:
+  from 0% to 86% wins against a hard scripted aim bot in 15 minutes of CPU,
+  with 90% of its clicks landing. Its fights replay bit for bit on the real
+  26.3 server (`oracle/replays`, `replay_*` tests).
