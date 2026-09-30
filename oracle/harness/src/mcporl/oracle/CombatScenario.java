@@ -12,9 +12,15 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
 
     public record Start(double x, double z, float yaw) {}
 
-    /** Inputs for one player on one tick. yaw/pitch are the rotation sent at the end of the tick. */
+    /**
+     * Inputs for one player on one tick. yaw/pitch are the rotation during the tick
+     * (sent at its end). attack: the attack key was pressed since the last tick (a
+     * click). attackHeld: the key is down when the tick samples it. Tokens:
+     * "attack" = press and still down, "tap" = press already released, "hold" =
+     * down without a new press.
+     */
     public record Input(boolean forward, boolean backward, boolean left, boolean right, boolean jump,
-                        boolean shift, boolean sprint, boolean attack, float yaw, float pitch) {}
+                        boolean shift, boolean sprint, boolean attack, boolean attackHeld, float yaw, float pitch) {}
 
     public record Tick(Input a, Input b) {}
 
@@ -82,7 +88,7 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
     }
 
     private static Input input(String spec, Side side) {
-        boolean f = false, bk = false, l = false, r = false, j = false, sh = false, sp = false, at = false;
+        boolean f = false, bk = false, l = false, r = false, j = false, sh = false, sp = false, at = false, held = false;
         for (String t : spec.isEmpty() ? new String[0] : spec.split("\\s+")) {
             if (t.startsWith("yaw=")) side.yaw = Float.parseFloat(t.substring(4));
             else if (t.startsWith("pitch=")) side.pitch = Float.parseFloat(t.substring(6));
@@ -94,11 +100,16 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                 case "jump" -> j = true;
                 case "sneak" -> sh = true;
                 case "sprint" -> sp = true;
-                case "attack" -> at = true;
+                case "attack" -> {
+                    at = true;
+                    held = true;
+                }
+                case "tap" -> at = true;
+                case "hold" -> held = true;
                 case "idle" -> { }
                 default -> throw new IllegalArgumentException("unknown token " + t);
             }
         }
-        return new Input(f, bk, l, r, j, sh, sp, at, side.yaw, side.pitch);
+        return new Input(f, bk, l, r, j, sh, sp, at, held, side.yaw, side.pitch);
     }
 }

@@ -1,0 +1,10 @@
+# A clicks the ground (starts and aborts mining a grass block). Every click
+# sends ServerboundPunchPacket, which resets the server's attack strength, so
+# A's hit 2 ticks later is at half strength: 0.4 damage.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=3.0 yaw=180
+20 idle | idle
+1 attack pitch=60 | idle
+1 idle pitch=0 | idle
+1 attack | idle
+30 idle | idle

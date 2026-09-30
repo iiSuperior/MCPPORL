@@ -31,6 +31,7 @@ import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerLoadedPacket;
 import net.minecraft.network.protocol.game.ServerboundPunchPacket;
 import net.minecraft.server.MinecraftServer;
@@ -83,6 +84,10 @@ public final class CombatOracle {
         // Minecraft.missTime: clicks are ignored while it is positive (set by a whiff)
         int missTime;
         HitResult pick;  // this tick's crosshair pick
+        // MultiPlayerGameMode block-breaking state
+        boolean isDestroying;
+        BlockPos destroyBlockPos;
+        int destroyStartTick = -1, sequence, tick;
         // per-tick trace flags
         boolean gotVelocity, sentAttack;
         int teleports;  // server position corrections applied during the scenario
@@ -211,25 +216,13 @@ public final class CombatOracle {
         // place before the pick, the click and the movement.
         c.setYRot(in.yaw());
         c.setXRot(in.pitch());
-        // Minecraft.tick: pick(1.0F), then handleKeybinds -> startAttack, then missTime--.
+        // Minecraft.tick: pick(1.0F), then handleKeybinds (startAttack per click,
+        // then continueAttack with the key state), then missTime--.
+        me.tick++;
         me.pick = pick(c, other.server);
-        if (in.attack() && me.missTime <= 0) {
-            switch (me.pick.getType()) {
-                case ENTITY -> {
-                    // MultiPlayerGameMode.attack: the packet, then the client-side
-                    // Player.attack (a no-op against another player) and the reset.
-                    me.toServer.add(new ServerboundAttackPacket(targetId));
-                    c.resetAttackStrengthTicker();
-                    me.sentAttack = true;
-                }
-                case BLOCK -> throw new IllegalStateException(me.name + " clicked a block: mining is out of scope");
-                case MISS -> {
-                    me.missTime = 10;  // gameMode.hasMissTime(): survival
-                    c.resetAttackStrengthTicker();
-                }
-            }
-            me.toServer.add(ServerboundPunchPacket.INSTANCE);  // after the swing, for every click not eaten
-        }
+        boolean instantAttack = false;
+        if (in.attack()) instantAttack |= startAttack(me, targetId);
+        continueAttack(me, !instantAttack && in.attackHeld());
         if (me.missTime > 0) me.missTime--;
         c.setKeys(new Input(in.forward(), in.backward(), in.left(), in.right(), in.jump(), in.shift(), in.sprint()));
         c.setOldPosAndRot();
@@ -239,6 +232,68 @@ public final class CombatOracle {
         // Minecraft.tick ends every client tick with this packet; the server uses it
         // to reset per-tick bookkeeping such as receivedPositionThisTick.
         me.toServer.add(ServerboundClientTickEndPacket.INSTANCE);
+    }
+
+    /** Minecraft.startAttack for a bare hand in survival; returns endAttack. */
+    private boolean startAttack(Side me, int targetId) {
+        if (me.missTime > 0) return false;
+        switch (me.pick.getType()) {
+            case ENTITY -> {
+                // MultiPlayerGameMode.attack: the packet, then the client-side
+                // Player.attack (a no-op against another player) and the reset.
+                me.toServer.add(new ServerboundAttackPacket(targetId));
+                me.client.resetAttackStrengthTicker();
+                me.sentAttack = true;
+            }
+            case BLOCK -> {
+                BlockHitResult hit = (BlockHitResult) me.pick;
+                startDestroyBlock(me, hit.getBlockPos(), hit.getDirection());  // never an instant break in scope
+            }
+            case MISS -> {
+                me.missTime = 10;  // gameMode.hasMissTime(): survival
+                me.client.resetAttackStrengthTicker();
+            }
+        }
+        me.toServer.add(ServerboundPunchPacket.INSTANCE);  // after player.swing
+        return false;
+    }
+
+    /** Minecraft.continueAttack: releasing the key clears missTime; holding it mines. */
+    private void continueAttack(Side me, boolean down) {
+        if (!down) me.missTime = 0;
+        if (me.missTime > 0) return;
+        if (down && me.pick instanceof BlockHitResult hit && me.pick.getType() == HitResult.Type.BLOCK) {
+            // MultiPlayerGameMode.continueDestroyBlock (survival, destroyDelay 0)
+            if (me.isDestroying && hit.getBlockPos().equals(me.destroyBlockPos)) {
+                if (me.destroyStartTick != me.tick) {
+                    throw new IllegalStateException(me.name + " held attack on a block: mining is out of scope");
+                }
+                // destroyProgress grows; one tick of a bare hand never breaks these blocks
+            } else {
+                startDestroyBlock(me, hit.getBlockPos(), hit.getDirection());
+            }
+            me.toServer.add(ServerboundPunchPacket.INSTANCE);  // swing + punch
+        } else {
+            stopDestroyBlock(me);
+        }
+    }
+
+    private void startDestroyBlock(Side me, BlockPos pos, Direction direction) {
+        if (me.isDestroying && pos.equals(me.destroyBlockPos)) return;
+        if (me.isDestroying) {
+            me.toServer.add(new ServerboundPlayerActionPacket(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, me.destroyBlockPos, direction));
+        }
+        me.toServer.add(new ServerboundPlayerActionPacket(ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK, pos, direction, ++me.sequence));
+        me.isDestroying = true;
+        me.destroyBlockPos = pos;
+        me.destroyStartTick = me.tick;
+    }
+
+    private void stopDestroyBlock(Side me) {
+        if (!me.isDestroying) return;
+        me.toServer.add(new ServerboundPlayerActionPacket(ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK, me.destroyBlockPos, Direction.DOWN));
+        me.isDestroying = false;
+        me.client.resetAttackStrengthTicker();
     }
 
     /**
@@ -380,6 +435,7 @@ public final class CombatOracle {
         else if (p instanceof ServerboundPlayerLoadedPacket l) c.handleAcceptPlayerLoad(l);
         else if (p instanceof ServerboundClientTickEndPacket e) c.handleClientTickEnd(e);
         else if (p instanceof ServerboundPunchPacket pp) c.handlePunch(pp);
+        else if (p instanceof ServerboundPlayerActionPacket pa) c.handlePlayerAction(pa);
         else throw new IllegalStateException("no handler for " + p.getClass().getSimpleName());
     }
 
@@ -483,7 +539,7 @@ public final class CombatOracle {
     private static String input(CombatScenario.Input in) {
         return "{\"W\": " + in.forward() + ", \"S\": " + in.backward() + ", \"A\": " + in.left() + ", \"D\": " + in.right()
                 + ", \"jump\": " + in.jump() + ", \"sneak\": " + in.shift() + ", \"sprint\": " + in.sprint()
-                + ", \"attack\": " + in.attack() + ", \"yaw\": " + OracleMain.hex(in.yaw())
+                + ", \"attack\": " + in.attack() + ", \"attackHeld\": " + in.attackHeld() + ", \"yaw\": " + OracleMain.hex(in.yaw())
                 + ", \"pitch\": " + OracleMain.hex(in.pitch()) + "}";
     }
 
