@@ -757,7 +757,23 @@ public final class CombatOracle {
             level.setChunkForced(dx, dz, true);
             level.getChunk(dx, dz);
         }
-        for (int i = 0; i < 40; i++) tickServer.invoke(server, (BooleanSupplier) () -> false);
+        // Chunks become entity-ticking asynchronously, after a number of ticks
+        // that varies between machines: wait for it instead of guessing.
+        int ticks = 0;
+        while (!arenaTicking()) {
+            if (ticks >= 2000) throw new IllegalStateException("arena chunks are still not entity-ticking after " + ticks + " ticks");
+            tickServer.invoke(server, (BooleanSupplier) () -> false);
+            ticks++;
+        }
+        for (int i = 0; i < 20; i++) tickServer.invoke(server, (BooleanSupplier) () -> false);
+        System.out.println("[oracle] arena entity-ticking after " + ticks + " ticks");
+    }
+
+    private boolean arenaTicking() {
+        for (int cx = -2; cx <= 2; cx++) for (int cz = -2; cz <= 2; cz++) {
+            if (!level.isPositionEntityTicking(new BlockPos(cx * 16 + 8, -60, cz * 16 + 8))) return false;
+        }
+        return true;
     }
 
     static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
