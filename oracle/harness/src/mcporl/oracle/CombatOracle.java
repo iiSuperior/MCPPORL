@@ -155,11 +155,13 @@ public final class CombatOracle {
             // tick (tickPlayer -> resetPosition) initialises the anti-cheat's
             // last-good position before the teleport acknowledgement is handled.
             serverStep(List.of(a, b));
+            handshakeDiag(s, 0, a, b);
             deliver(a, b);  // applies the login teleport and queues its acknowledgement
             deliver(b, a);
             for (Side side : List.of(a, b)) side.toServer.add(new ServerboundPlayerLoadedPacket());
             for (int i = 0; i < 2; i++) {
                 serverStep(List.of(a, b));
+                handshakeDiag(s, i + 1, a, b);
                 deliver(a, b);
                 deliver(b, a);
             }
@@ -567,6 +569,29 @@ public final class CombatOracle {
             }
         }
         s.toClient.clear();
+    }
+
+    /** Which tracker packets each client is about to receive during the login handshake. */
+    private static void handshakeDiag(CombatScenario s, int step, Side a, Side b) {
+        if (!s.name().startsWith("10_")) return;
+        for (Side side : List.of(a, b)) {
+            Side other = side == a ? b : a;
+            StringBuilder kinds = new StringBuilder();
+            for (Packet<?> p : side.toClient) {
+                if (p instanceof ClientboundAddEntityPacket add && add.getId() == other.server.getId()) {
+                    kinds.append(" Add(").append(add.getX()).append(',').append(add.getY()).append(',').append(add.getZ())
+                            .append(" yRot=").append(add.getYRot()).append(" xRot=").append(add.getXRot()).append(')');
+                } else if (p instanceof ClientboundMoveEntityPacket m && m.getEntity(other.server.level()) == other.server) {
+                    kinds.append(' ').append(p.getClass().getSimpleName()).append("(steps=").append(m.getPositionDelta().stepCount()).append(')');
+                } else if (p instanceof ClientboundEntityPositionSyncPacket sync && sync.id() == other.server.getId()) {
+                    kinds.append(" Sync(").append(sync.position()).append(" yRot=").append(sync.yRot()).append(" xRot=").append(sync.xRot())
+                            .append(" onGround=").append(sync.onGround()).append(')');
+                }
+            }
+            System.out.println("[oracle] handshake step " + step + " to " + side.name + ":" + kinds + " | other server onGround="
+                    + other.server.onGround() + " pos=" + other.server.position() + " yRot=" + other.server.getYRot()
+                    + " updateInterval=" + other.server.getType().updateInterval() + " trackDeltas=" + other.server.getType().trackDeltas());
+        }
     }
 
     private static RemoteView requireView(Side s, Packet<?> p) {
