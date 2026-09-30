@@ -43,7 +43,7 @@ class PPOConfig:
     lam: float = 0.95
     hidden: int = 256
     self_play: float = 0.5      # share of duels where both slots are the learner
-    dummy: float = 0.1          # share of scripted duels against a standing dummy
+    dummy: float = 0.3          # share of scripted duels against a standing dummy
     max_ticks: int = 600
     weapons: tuple[str, ...] = ("diamond_sword",)
     seed: int = 1

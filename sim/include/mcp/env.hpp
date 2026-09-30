@@ -268,6 +268,14 @@ struct BatchEnv {
             ticks[i]++;
             float r[2];
             rewards[i].step(d, cfg.reward, r, finished, winner);
+            // A forfeit (leaving the arena or the supported domain) is worth a
+            // death: the loser is charged its remaining health and the winner
+            // credited it, or running away would be cheaper than losing a fight.
+            if ((left || broke) && winner >= 0) {
+                float rest = d.p[1 - winner].server.health;
+                r[1 - winner] -= cfg.reward.damageTaken * rest;
+                r[winner] += cfg.reward.damageDealt * rest;
+            }
             for (int32_t k = 0; k < 2; ++k) {
                 EpisodeStats::Slot& s = st.s[k];
                 s.clicks += in[k].attack ? 1.0F : 0.0F;
