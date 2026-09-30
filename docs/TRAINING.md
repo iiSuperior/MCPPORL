@@ -109,8 +109,11 @@ ones, while head to head against `sword8` it stays even, so the gains
 against scripted opponents did not cost general strength.
 
 Eight episodes of `sword9` (`t00` to `t07`: four against the fair
-tactician, two of them with crits, and four self-play) go to the oracle,
-adding strafing, W-taps and real crits to the replay coverage.
+tactician, two of them with crits, and four self-play) matched vanilla on
+every field of every tick, first time, adding strafing, W-taps and crits to
+the replay coverage. Many of those crits (10.5 damage with a diamond sword)
+are the learner's own: it opens fights with a falling hit, e.g. in `t00`,
+where the tactician does not crit at all. All 22 replays are part of `ctest`.
 
 ### What went wrong on the way (runs 1 to 7)
 
