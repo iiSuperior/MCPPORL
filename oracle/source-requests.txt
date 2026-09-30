@@ -2,6 +2,15 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 30: barrier blocks, for walled training arenas (collision and crosshair picks).
-net.minecraft.world.level.block.BarrierBlock :all
-net.minecraft.world.level.block.state.BlockBehaviour getShape getCollisionShape getVisualShape getInteractionShape
+# Batch 31: hotbar switching and shields.
+net.minecraft.server.network.ServerGamePacketListenerImpl handleSetCarriedItem handleUseItem handlePlayerAction
+net.minecraft.world.entity.player.Player tick resetAttackStrengthTicker getCurrentItemAttackStrengthDelay blockUsingItem hurtCurrentlyUsedShield getSecondsToDisableBlocking hurtServer
+net.minecraft.world.entity.LivingEntity startUsingItem stopUsingItem releaseUsingItem updatingUsingItem updateUsingItem isBlocking getItemBlockingWith applyItemBlocking hurtServer blockUsingItem blockedByItem collectEquipmentChanges detectEquipmentUpdates getTicksUsingItem isUsingItem
+net.minecraft.world.item.component.BlocksAttacks :all
+net.minecraft.world.item.Item use getUseDuration releaseUsing
+net.minecraft.world.item.ItemCooldowns :all
+net.minecraft.server.level.ServerPlayerGameMode useItem
+net.minecraft.client.multiplayer.MultiPlayerGameMode useItem releaseUsingItem ensureHasSentCarriedItem
+net.minecraft.client.Minecraft startUseItem :grep=keyUse|rightClickDelay|isUsingItem\(\)|releaseUsingItem|selected =|setSelectedSlot|keyHotbarSlots
+net.minecraft.client.player.LocalPlayer startUsingItem stopUsingItem isUsingItem aiStep itemUseSpeedMultiplier isSlowDueToUsingItem
+net.minecraft.world.entity.player.Inventory setSelectedSlot getSelectedSlot getSelectedItem
