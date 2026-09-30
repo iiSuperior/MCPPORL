@@ -1,0 +1,62 @@
+{
+ "n_duels": 256,
+ "rollout": 128,
+ "updates": 150,
+ "epochs": 4,
+ "minibatches": 8,
+ "lr": 0.0001,
+ "clip": 0.2,
+ "ent_coef": 0.01,
+ "vf_coef": 0.5,
+ "max_grad_norm": 0.5,
+ "lam": 0.95,
+ "hidden": 256,
+ "self_play": 0.2,
+ "dummy": 0.05,
+ "max_ticks": 600,
+ "start_dist": [
+  2.5,
+  6.0
+ ],
+ "weapons": [
+  "diamond_sword"
+ ],
+ "seed": 1,
+ "eval_every": 10,
+ "eval_episodes": 256,
+ "reward": {
+  "damage_dealt": 1.0,
+  "damage_taken": 1.0,
+  "win": 10.0,
+  "loss": 10.0,
+  "reach_shaping": 0.1,
+  "gamma": 0.99,
+  "aim_shaping": 0.2
+ },
+ "aim_dense": 0.0,
+ "reach_dense": 0.0,
+ "anneal": 0.6,
+ "init_checkpoint": "checkpoints/sword9.pt",
+ "league": 0.0,
+ "league_every": 20,
+ "tactician": 0.6,
+ "expert": 0.0,
+ "hotbar": [
+  "wooden_sword",
+  "netherite_sword"
+ ],
+ "offhand": "",
+ "opp_hotbar": [],
+ "opp_offhand": "",
+ "slot_keys": 2,
+ "use_key": false,
+ "shielder": 0.0,
+ "shield_lower": [
+  0.01,
+  0.06
+ ],
+ "eval_opponents": [
+  "tactician",
+  "bot_hard"
+ ]
+}

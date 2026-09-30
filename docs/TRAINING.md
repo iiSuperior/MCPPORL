@@ -224,7 +224,26 @@ Thirty updates later the greedy policy plays it too (update 110, 256 fights
 each): against the never-lowering shield user 59% wins (was 2%), 0.66
 disables and 0.66 swap-backs a fight, 13.1 damage dealt to 7.9 taken;
 against the panicking one 27% (was 8%); against the standard one 85% with
-0.18 axe swaps a fight.
+0.18 axe swaps a fight. It kept improving and converged by update ~200
+(checkpoint `trainer/checkpoints/shield5*`, update 250, greedy, 256 fights):
+
+| Shield user | win | disables | swap-backs | axe swaps (shield up) | hits into the raised shield |
+|---|---|---|---|---|---|
+| never lowers it | **100%** | 1.00 | 1.00 | 1.12 | 1.3 |
+| panics at 8 health | 94% | 0.91 | 0.91 | 1.04 | 2.5 |
+| standard (lowers it ~every 33 ticks) | 94% | 0.75 | 0.75 | 0.88 | 1.2 |
+
+One swap, one disable, one swap back, per fight: the clumsy swapping is
+gone. About one disable in six (22 of 128 at update 180) is a **swap-hit**
+(the axe's hotbar key and the click on the same tick: the blow carries the
+sword's charge and the axe's disable, scenario 45), which nobody taught it.
+
+Eight of its fights against shield users (`oracle/replays/s00` to `s07`,
+update 180: four against one that never lowers its shield, four against
+one that lowers it at random; 19 swap-hits among them) replay on the real
+server bit for bit, first time.
+
+Also saved: `trainer/checkpoints/swapA*` (Experiment A, update 80).
 
 ### What went wrong on the way (runs 1 to 7)
 
