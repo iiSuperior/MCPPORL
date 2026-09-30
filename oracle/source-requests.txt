@@ -42,3 +42,29 @@ net.minecraft.world.effect.MobEffects :grep=STRENGTH|WEAKNESS|RESISTANCE|REGENER
 net.minecraft.world.item.enchantment.EnchantmentHelper :signatures modifyKnockback getDamageProtection modifyDamage
 net.minecraft.world.item.enchantment.Enchantments :fields
 net.minecraft.world.entity.ai.attributes.Attributes :grep=ATTACK_DAMAGE|ATTACK_SPEED|ARMOR|ARMOR_TOUGHNESS|KNOCKBACK_RESISTANCE
+
+# Batch 27: items research phase 2 — deep dives (full bodies).
+net.minecraft.world.entity.LivingEntity hurtOrSimulate applyItemBlocking blockUsingItem blockedByItem getItemBlockingWith getDamageAfterArmorAbsorb getDamageAfterMagicAbsorb
+net.minecraft.world.entity.LivingEntity :grep=MobEffects.RESISTANCE|FIRE_RESISTANCE
+net.minecraft.world.entity.player.Player getWeaponItem createAttackSource getEnchantedDamage baseDamageScaleFactor isSweepAttack doSweepAttack getKnockback postPiercingAttack hurtArmor cannotAttack canCriticalAttack
+net.minecraft.world.entity.player.Player :grep=MINIMUM_ATTACK_CHARGE
+net.minecraft.world.item.Item getAttackDamageBonus
+net.minecraft.world.item.component.DeathProtection :all
+net.minecraft.world.item.component.Consumables :grep=GOLDEN
+net.minecraft.world.food.Foods :grep=GOLDEN_APPLE
+net.minecraft.world.food.FoodConstants :all
+net.minecraft.world.food.FoodData tick addExhaustion eat
+net.minecraft.world.item.ToolMaterial :all
+net.minecraft.world.item.Items :grep=DIAMOND_SWORD|DIAMOND_AXE|NETHERITE_SWORD|NETHERITE_AXE|SHIELD
+net.minecraft.world.item.equipment.ArmorMaterial :all
+net.minecraft.world.item.equipment.ArmorMaterials :fields
+net.minecraft.world.item.equipment.ArmorType :all
+net.minecraft.world.item.equipment.Equippable :all
+net.minecraft.world.item.component.AttackRange :all
+net.minecraft.world.item.component.PiercingWeapon :all
+net.minecraft.world.item.component.SwingAnimation :all
+net.minecraft.world.effect.HealOrHarmMobEffect :all
+net.minecraft.world.effect.RegenerationMobEffect :all
+net.minecraft.world.effect.PoisonMobEffect :all
+net.minecraft.world.effect.AbsorptionMobEffect :all
+net.minecraft.world.item.enchantment.Enchantment modifyDamage modifyKnockback modifyDamageProtection modifyArmorEffectiveness
