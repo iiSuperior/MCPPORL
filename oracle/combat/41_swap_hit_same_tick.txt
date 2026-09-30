@@ -1,0 +1,9 @@
+# Swap and click on the same tick: MultiPlayerGameMode.attack flushes the new slot
+# first, so the server handles SetCarriedItem, then the attack. The attribute
+# modifiers still belong to the sword (they change in the next server tick), the
+# attack strength is the sword's, and the weapon item is the axe.
+start A hotbar=netherite_sword,wooden_axe
+start B
+20 idle | idle
+1  slot=1 tap | idle
+30 idle | idle

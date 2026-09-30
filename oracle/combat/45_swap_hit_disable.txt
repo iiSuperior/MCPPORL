@@ -1,0 +1,12 @@
+# Swap-hit on a raised shield: slot key and click on the same tick. The server
+# sees the axe as the weapon item (Weapon component: 5 s disable) while the
+# attack uses the sword's attributes. Then the reverse swap-hit on the lowered
+# shield: the axe's attributes (7.0) with the attack strength after the reset.
+start A hotbar=netherite_sword,wooden_axe
+start B offhand=shield
+20 idle | idle
+8  idle | use
+1  slot=1 tap | use
+3  idle | use
+1  slot=0 tap | use
+20 idle | use

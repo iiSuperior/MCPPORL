@@ -22,6 +22,14 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
+import net.minecraft.network.protocol.game.ClientboundCooldownPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket;
 import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
@@ -99,6 +107,10 @@ public final class CombatOracle {
         boolean isDestroying;
         BlockPos destroyBlockPos;
         int destroyStartTick = -1, sequence, tick;
+        // Minecraft.rightClickDelay; MultiPlayerGameMode.carriedIndex (the hotbar
+        // slot last sent to the server); the use key's state last tick.
+        int rightClickDelay, carriedIndex;
+        boolean lastUseDown;
         // per-tick trace flags
         boolean gotVelocity, sentAttack;
         int teleports;  // server position corrections applied during the scenario
@@ -124,7 +136,10 @@ public final class CombatOracle {
             "server.vel.x:f64", "server.vel.y:f64", "server.vel.z:f64", "server.yRot:f32", "speedAttr:f64",
             "pick:i32", "pick.x:f64", "pick.y:f64", "pick.z:f64", "missTime:i32",
             "gotVelocity:bool", "sentAttack:bool", "teleports:i32",
-            "view.x:f64", "view.y:f64", "view.z:f64", "view.yRot:f32", "view.recv:i32"};
+            "view.x:f64", "view.y:f64", "view.z:f64", "view.yRot:f32", "view.recv:i32",
+            "slot:i32", "using:bool", "cooldown:f32", "server.slot:i32", "server.using:bool", "server.useTicks:i32",
+            "server.blocking:bool", "server.cooldown:f32", "server.yHeadRot:f32", "server.mainDamage:i32",
+            "server.offDamage:i32", "view.using:bool"};
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -231,11 +246,17 @@ public final class CombatOracle {
         EmbeddedChannel channel = new EmbeddedChannel(new ChannelHandler[] {connection});
         server.getPlayerList().placeNewPlayer(connection, sp, cookie);
         if (start.health() != sp.getMaxHealth()) sp.setHealth(start.health());
-        ItemStack held = heldItem(start.item());
-        sp.setItemSlot(EquipmentSlot.MAINHAND, held.copy());
-
         OraclePlayer cp = new OraclePlayer(level, profile);
-        cp.setItemSlot(EquipmentSlot.MAINHAND, held.copy());
+        // Hotbar slot 0 is selected; both copies hold the same items.
+        List<String> slots = start.slots();
+        for (int i = 0; i < slots.size(); i++) {
+            ItemStack stack = heldItem(slots.get(i));
+            sp.getInventory().setItem(i, stack.copy());
+            cp.getInventory().setItem(i, stack.copy());
+        }
+        ItemStack off = heldItem(start.offhand());
+        sp.setItemSlot(EquipmentSlot.OFFHAND, off.copy());
+        cp.setItemSlot(EquipmentSlot.OFFHAND, off.copy());
         cp.setPos(start.x(), y, start.z());
         cp.setYRot(start.yaw());
         cp.setOldPosAndRot();
@@ -267,13 +288,13 @@ public final class CombatOracle {
         // place before the pick, the click and the movement.
         c.setYRot(in.yaw());
         c.setXRot(in.pitch());
-        // Minecraft.tick: pick(1.0F), then handleKeybinds (startAttack per click,
-        // then continueAttack with the key state), then missTime--.
         me.tick++;
+        // Minecraft.tick: rightClickDelay--, gameMode.tick (sends a hotbar change
+        // made last tick), the pick, handleKeybinds, missTime--.
+        if (me.rightClickDelay > 0) me.rightClickDelay--;
+        ensureHasSentCarriedItem(me);
         me.pick = pick(c, me.view);
-        boolean instantAttack = false;
-        if (in.attack()) instantAttack |= startAttack(me, targetId);
-        continueAttack(me, !instantAttack && in.attackHeld());
+        handleKeybinds(me, in, targetId);
         if (me.missTime > 0) me.missTime--;
         c.setKeys(new Input(in.forward(), in.backward(), in.left(), in.right(), in.jump(), in.shift(), in.sprint()));
         c.setOldPosAndRot();
@@ -289,6 +310,94 @@ public final class CombatOracle {
         me.toServer.add(ServerboundClientTickEndPacket.INSTANCE);
     }
 
+    /** Minecraft.handleKeybinds: hotbar keys, then attack and use (clicks are eaten while using an item). */
+    private void handleKeybinds(Side me, CombatScenario.Input in, int targetId) {
+        OraclePlayer c = me.client;
+        if (in.slot() >= 0) c.getInventory().setSelectedSlot(in.slot());
+        boolean usePressed = in.use() && !me.lastUseDown;  // keyUse.consumeClick
+        me.lastUseDown = in.use();
+        boolean instantAttack = false;
+        if (c.isUsingItem()) {
+            if (!in.use()) releaseUsingItem(me);
+        } else {
+            if (in.attack()) instantAttack |= startAttack(me, targetId);
+            if (usePressed) startUseItem(me, targetId);
+        }
+        if (in.use() && me.rightClickDelay == 0 && !c.isUsingItem()) startUseItem(me, targetId);
+        continueAttack(me, !instantAttack && in.attackHeld());
+    }
+
+    /** MultiPlayerGameMode.ensureHasSentCarriedItem. */
+    private static void ensureHasSentCarriedItem(Side me) {
+        int index = me.client.getInventory().getSelectedSlot();
+        if (index != me.carriedIndex) {
+            me.carriedIndex = index;
+            me.toServer.add(new ServerboundSetCarriedItemPacket(index));
+        }
+    }
+
+    /** MultiPlayerGameMode.releaseUsingItem. */
+    private static void releaseUsingItem(Side me) {
+        ensureHasSentCarriedItem(me);
+        me.toServer.add(new ServerboundPlayerActionPacket(ServerboundPlayerActionPacket.Action.RELEASE_USE_ITEM, BlockPos.ZERO, Direction.DOWN));
+        me.client.releaseUsingItem();
+    }
+
+    /**
+     * Minecraft.startUseItem: per hand, interact with the entity or block under the
+     * crosshair, then use the item. Swords, axes and shields have no entity or block
+     * interaction, so those packets change nothing on the server; the shield's use
+     * raises it.
+     */
+    private void startUseItem(Side me, int targetId) {
+        if (me.isDestroying) return;  // gameMode.isDestroying()
+        me.rightClickDelay = 4;
+        OraclePlayer c = me.client;
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack held = c.getItemInHand(hand);
+            switch (me.pick.getType()) {
+                case ENTITY -> {
+                    EntityHitResult hit = (EntityHitResult) me.pick;
+                    Entity entity = hit.getEntity();
+                    if (c.isWithinEntityInteractionRange(entity, 0.0)) {
+                        // MultiPlayerGameMode.interact
+                        ensureHasSentCarriedItem(me);
+                        Vec3 location = hit.getLocation().subtract(entity.getX(), entity.getY(), entity.getZ());
+                        me.toServer.add(new ServerboundInteractPacket(targetId, hand, location, c.isShiftKeyDown()));
+                        if (c.interactOn(entity, hand, location) instanceof InteractionResult.Success) {
+                            throw new IllegalStateException(me.name + ": an entity interaction succeeded; out of scope");
+                        }
+                    }
+                }
+                case BLOCK -> {
+                    // MultiPlayerGameMode.useItemOn -> performUseItemOn: grass and
+                    // barriers have no use, and swords, axes and shields have no useOn
+                    // for them (an axe's block transformer strips wood), so the client
+                    // predicts PASS and the server changes nothing.
+                    ensureHasSentCarriedItem(me);
+                    me.toServer.add(new ServerboundUseItemOnPacket(hand, (BlockHitResult) me.pick, ++me.sequence));
+                }
+                case MISS -> { }
+            }
+            if (!held.isEmpty() && useItem(me, hand) instanceof InteractionResult.Success) return;
+        }
+    }
+
+    /** MultiPlayerGameMode.useItem: the packet always goes out; the use is predicted unless on cooldown. */
+    private InteractionResult useItem(Side me, InteractionHand hand) {
+        ensureHasSentCarriedItem(me);
+        OraclePlayer c = me.client;
+        me.toServer.add(new ServerboundUseItemPacket(hand, ++me.sequence, c.getYRot(), c.getXRot()));
+        ItemStack itemStack = c.getItemInHand(hand);
+        if (c.getCooldowns().isOnCooldown(itemStack)) return InteractionResult.PASS;
+        InteractionResult result = itemStack.use(c.level(), c, hand);
+        if (result instanceof InteractionResult.Success success && success.heldItemTransformedTo() != null
+                && success.heldItemTransformedTo() != itemStack) {
+            throw new IllegalStateException(me.name + ": item use transformed the held item; out of scope");
+        }
+        return result;
+    }
+
     /** Minecraft.startAttack for a bare hand in survival; returns endAttack. */
     private boolean startAttack(Side me, int targetId) {
         if (me.missTime > 0) return false;
@@ -296,6 +405,7 @@ public final class CombatOracle {
             case ENTITY -> {
                 // MultiPlayerGameMode.attack: the packet, then the client-side
                 // Player.attack (a no-op against another player) and the reset.
+                ensureHasSentCarriedItem(me);
                 me.toServer.add(new ServerboundAttackPacket(targetId));
                 me.client.resetAttackStrengthTicker();
                 me.sentAttack = true;
@@ -316,9 +426,10 @@ public final class CombatOracle {
     /** Minecraft.continueAttack: releasing the key clears missTime; holding it mines. */
     private void continueAttack(Side me, boolean down) {
         if (!down) me.missTime = 0;
-        if (me.missTime > 0) return;
+        if (me.missTime > 0 || me.client.isUsingItem()) return;
         if (down && me.pick instanceof BlockHitResult hit && me.pick.getType() == HitResult.Type.BLOCK) {
             // MultiPlayerGameMode.continueDestroyBlock (survival, destroyDelay 0)
+            ensureHasSentCarriedItem(me);
             if (me.isDestroying && hit.getBlockPos().equals(me.destroyBlockPos)) {
                 if (me.destroyStartTick != me.tick) {
                     throw new IllegalStateException(me.name + " held attack on a block: mining is out of scope");
@@ -492,6 +603,10 @@ public final class CombatOracle {
         else if (p instanceof ServerboundPunchPacket pp) c.handlePunch(pp);
         else if (p instanceof ServerboundPlayerActionPacket pa) c.handlePlayerAction(pa);
         else if (p instanceof ServerboundChunkBatchReceivedPacket cb) c.handleChunkBatchReceived(cb);
+        else if (p instanceof ServerboundSetCarriedItemPacket sc) c.handleSetCarriedItem(sc);
+        else if (p instanceof ServerboundUseItemPacket ui) c.handleUseItem(ui);
+        else if (p instanceof ServerboundUseItemOnPacket uo) c.handleUseItemOn(uo);
+        else if (p instanceof ServerboundInteractPacket ip) c.handleInteract(ip);
         else throw new IllegalStateException("no handler for " + p.getClass().getSimpleName());
     }
 
@@ -570,6 +685,16 @@ public final class CombatOracle {
                 s.gotVelocity = true;
             } else if (p instanceof ClientboundSetEntityDataPacket d && d.id() == self) {
                 s.client.getEntityData().assignValues(d.packedItems());
+            } else if (p instanceof ClientboundSetEntityDataPacket d && d.id() == otherId) {
+                requireView(s, p).getEntityData().assignValues(d.packedItems());  // e.g. the raised shield
+            } else if (p instanceof ClientboundSetEquipmentPacket e && e.getEntity() == otherId) {
+                RemoteView v = requireView(s, p);
+                for (var pair : e.getSlots()) v.setItemSlot(pair.getFirst(), pair.getSecond());
+                s.ignoredToClient.merge("ClientboundSetEquipmentPacket(applied)", 1, Integer::sum);
+            } else if (p instanceof ClientboundCooldownPacket cd) {
+                // ClientPacketListener.handleItemCooldown
+                if (cd.duration() == 0) s.client.getCooldowns().removeCooldown(cd.cooldownGroup());
+                else s.client.getCooldowns().addCooldown(cd.cooldownGroup(), cd.duration());
             } else if (p instanceof ClientboundUpdateAttributesPacket u && u.getEntityId() == self) {
                 // ClientPacketListener.handleUpdateAttributes. The server echoes the
                 // player's own attributes, e.g. the sprint speed modifier removed by
@@ -693,8 +818,20 @@ public final class CombatOracle {
                 + ", \"teleports\": " + s.teleports
                 + ", \"view.x\": " + OracleMain.hex(s.view.getX()) + ", \"view.y\": " + OracleMain.hex(s.view.getY())
                 + ", \"view.z\": " + OracleMain.hex(s.view.getZ()) + ", \"view.yRot\": " + OracleMain.hex(s.view.getYRot())
-                + ", \"view.recv\": " + s.viewRecv + "}";
+                + ", \"view.recv\": " + s.viewRecv
+                + ", \"slot\": " + c.getInventory().getSelectedSlot() + ", \"using\": " + c.isUsingItem()
+                + ", \"cooldown\": " + OracleMain.hex(c.getCooldowns().getCooldownPercent(SHIELD, 0.0F))
+                + ", \"server.slot\": " + sp.getInventory().getSelectedSlot() + ", \"server.using\": " + sp.isUsingItem()
+                + ", \"server.useTicks\": " + sp.getTicksUsingItem() + ", \"server.blocking\": " + sp.isBlocking()
+                + ", \"server.cooldown\": " + OracleMain.hex(sp.getCooldowns().getCooldownPercent(SHIELD, 0.0F))
+                + ", \"server.yHeadRot\": " + OracleMain.hex(sp.getYHeadRot())
+                + ", \"server.mainDamage\": " + sp.getMainHandItem().getDamageValue()
+                + ", \"server.offDamage\": " + sp.getOffhandItem().getDamageValue()
+                + ", \"view.using\": " + s.view.isUsingItem() + "}";
     }
+
+    /** Stands in for any shield when reading cooldowns (the group is the item id). */
+    private static final ItemStack SHIELD = new ItemStack(Items.SHIELD);
 
     /** Stone blocks the pick probe adds to the flat arena, to exercise occlusion. */
     static final int[][] PROBE_BLOCKS = {{2, -60, 2}, {2, -59, 2}, {-2, -60, 1}, {0, -58, -2}, {-1, -60, -1}};

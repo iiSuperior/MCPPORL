@@ -10,10 +10,19 @@ import java.util.Locale;
 /** Two-player combat script (see oracle/combat/README.md). */
 public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
 
-    /** item: the main-hand item's field name in {@code Items} (lower case), or empty for a bare hand. */
-    public record Start(double x, double z, float yaw, float health, String item) {
+    /**
+     * item: the main-hand item's field name in {@code Items} (lower case), or empty
+     * for a bare hand; it goes in hotbar slot 0. hotbar: comma-separated items for
+     * slots 0.. (overrides item; "-" leaves a slot empty). offhand: the off-hand item.
+     */
+    public record Start(double x, double z, float yaw, float health, String item, List<String> hotbar, String offhand) {
         public Start(double x, double z, float yaw, float health) {
-            this(x, z, yaw, health, "");
+            this(x, z, yaw, health, "", List.of(), "");
+        }
+
+        /** Hotbar slot contents (slot 0 = item when no hotbar is given). */
+        public List<String> slots() {
+            return hotbar.isEmpty() ? List.of(item) : hotbar;
         }
     }
 
@@ -24,8 +33,13 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
      * "attack" = press and still down, "tap" = press already released, "hold" =
      * down without a new press.
      */
+    /**
+     * slot: the hotbar key pressed this tick (0-8), or -1. use: the use key is down
+     * when the tick samples it ("use" token; a press on the first such tick).
+     */
     public record Input(boolean forward, boolean backward, boolean left, boolean right, boolean jump,
-                        boolean shift, boolean sprint, boolean attack, boolean attackHeld, float yaw, float pitch) {}
+                        boolean shift, boolean sprint, boolean attack, boolean attackHeld, float yaw, float pitch,
+                        int slot, boolean use) {}
 
     public record Tick(Input a, Input b) {}
 
@@ -52,7 +66,8 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                     String[] tok = line.split("\\s+");
                     double x = 0.5, z = 0.5;
                     float yaw = 0.0F, health = 20.0F;
-                    String item = "";
+                    String item = "", offhand = "";
+                    List<String> hotbar = List.of();
                     for (int i = 2; i < tok.length; i++) {
                         String[] kv = tok[i].split("=", 2);
                         switch (kv[0]) {
@@ -61,10 +76,13 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                             case "yaw" -> yaw = Float.parseFloat(kv[1]);
                             case "health" -> health = Float.parseFloat(kv[1]);
                             case "item" -> item = kv[1];
+                            case "hotbar" -> hotbar = List.of(kv[1].split(",")).stream().map(v -> v.equals("-") ? "" : v).toList();
+                            case "offhand" -> offhand = kv[1];
                             default -> throw new IllegalArgumentException("unknown start key " + kv[0]);
                         }
                     }
-                    Start s = new Start(x, z, yaw, health, item);
+                    if (hotbar.size() > 9) throw new IllegalArgumentException("a hotbar has 9 slots");
+                    Start s = new Start(x, z, yaw, health, item, hotbar, offhand);
                     switch (tok[1]) {
                         case "a" -> a = s;
                         case "b" -> b = s;
@@ -96,10 +114,15 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
     }
 
     private static Input input(String spec, Side side) {
-        boolean f = false, bk = false, l = false, r = false, j = false, sh = false, sp = false, at = false, held = false;
+        boolean f = false, bk = false, l = false, r = false, j = false, sh = false, sp = false, at = false, held = false, use = false;
+        int slot = -1;
         for (String t : spec.isEmpty() ? new String[0] : spec.split("\\s+")) {
             if (t.startsWith("yaw=")) side.yaw = Float.parseFloat(t.substring(4));
             else if (t.startsWith("pitch=")) side.pitch = Float.parseFloat(t.substring(6));
+            else if (t.startsWith("slot=")) {
+                slot = Integer.parseInt(t.substring(5));
+                if (slot < 0 || slot > 8) throw new IllegalArgumentException("slot must be 0-8");
+            }
             else switch (t) {
                 case "w" -> f = true;
                 case "s" -> bk = true;
@@ -114,10 +137,11 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                 }
                 case "tap" -> at = true;
                 case "hold" -> held = true;
+                case "use" -> use = true;
                 case "idle" -> { }
                 default -> throw new IllegalArgumentException("unknown token " + t);
             }
         }
-        return new Input(f, bk, l, r, j, sh, sp, at, held, side.yaw, side.pitch);
+        return new Input(f, bk, l, r, j, sh, sp, at, held, side.yaw, side.pitch, slot, use);
     }
 }

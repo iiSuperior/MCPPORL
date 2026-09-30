@@ -1,0 +1,11 @@
+# A fully blocked hit still starts B's damage cooldown with lastHurt 0 (and the
+# hurt time). B lowers the shield; A's weak follow-up 5 ticks later deals its
+# damage minus 0 but, not being full damage, no knockback.
+start A item=netherite_sword
+start B offhand=shield
+20 idle | idle
+8  idle | use
+1  tap  | use
+4  idle | idle
+1  tap  | idle
+20 idle | idle

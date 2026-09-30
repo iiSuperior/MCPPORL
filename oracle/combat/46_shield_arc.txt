@@ -1,0 +1,12 @@
+# The blocking arc (90 degrees either side of the head yaw, horizontal only). B
+# turned 100 degrees from A: not blocked. B turned 80 degrees from A the other
+# way: blocked.
+start A item=diamond_sword
+start B offhand=shield yaw=80
+20 idle | idle
+8  idle | use
+1  tap  | use
+20 idle | use
+3  idle | use yaw=260
+1  tap  | use
+10 idle | use

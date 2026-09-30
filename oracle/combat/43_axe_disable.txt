@@ -1,0 +1,12 @@
+# An axe hit on a raised shield: blocked, then the shield is disabled (100-tick
+# cooldown, use stopped). B keeps the use key down: its client re-sends the use
+# every 4 ticks (rightClickDelay) and the server refuses while the cooldown runs.
+# A's next full-strength hit lands; the shield comes back up after the cooldown.
+start A item=diamond_axe
+start B offhand=shield
+20 idle | idle
+10 idle | use
+1  tap  | use
+25 idle | use
+1  tap  | use
+90 idle | use

@@ -1,0 +1,12 @@
+# The arc uses the server's head yaw, which follows the body yaw only in the
+# server tick (Player.aiStep). B turns its back on the same tick A's hit arrives:
+# A's packets are handled first and B's head yaw is still last tick's, so the
+# hit is blocked. The next hit, with B's back turned, lands.
+start A item=diamond_sword
+start B offhand=shield
+20 idle | idle
+8  idle | use
+1  tap  | use yaw=0
+20 idle | use
+1  tap  | use
+10 idle | use

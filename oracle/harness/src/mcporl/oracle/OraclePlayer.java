@@ -25,6 +25,9 @@ public final class OraclePlayer extends Player {
     private Input keys = Input.EMPTY;
     private Vec2 moveVector = Vec2.ZERO;
     private boolean crouching;
+    // LocalPlayer.startedUsingItem: the client's own (predicted) use state.
+    private boolean startedUsingItem;
+    private net.minecraft.world.InteractionHand usingItemHand;
 
     public OraclePlayer(Level level, GameProfile profile) {
         super(level, profile);
@@ -74,6 +77,52 @@ public final class OraclePlayer extends Player {
         return this.getYRot(a);
     }
 
+    // LocalPlayer.startUsingItem / isUsingItem / stopUsingItem. The copy lives
+    // in the server level, so LivingEntity's server-side branches (entity-data
+    // flags) also run on it; nothing reads them.
+    @Override
+    public void startUsingItem(final net.minecraft.world.InteractionHand hand) {
+        net.minecraft.world.item.ItemStack itemStack = this.getItemInHand(hand);
+        if (!itemStack.isEmpty() && !this.isUsingItem()) {
+            super.startUsingItem(hand);
+            this.startedUsingItem = true;
+            this.usingItemHand = hand;
+        }
+    }
+
+    @Override
+    public net.minecraft.world.InteractionHand getUsedItemHand() {
+        return java.util.Objects.requireNonNullElse(this.usingItemHand, net.minecraft.world.InteractionHand.MAIN_HAND);
+    }
+
+    // LocalPlayer.onSyncedDataUpdated: follow the server's use state (e.g. a
+    // shield the server disabled, or a use the client did not predict).
+    @Override
+    public void onSyncedDataUpdated(final net.minecraft.network.syncher.EntityDataAccessor<?> accessor) {
+        super.onSyncedDataUpdated(accessor);
+        if (DATA_LIVING_ENTITY_FLAGS.equals(accessor)) {
+            boolean serverUsingItem = (this.entityData.get(DATA_LIVING_ENTITY_FLAGS) & 1) > 0;
+            net.minecraft.world.InteractionHand serverUsingHand = (this.entityData.get(DATA_LIVING_ENTITY_FLAGS) & 2) > 0
+                    ? net.minecraft.world.InteractionHand.OFF_HAND : net.minecraft.world.InteractionHand.MAIN_HAND;
+            if (serverUsingItem && !this.startedUsingItem) {
+                this.startUsingItem(serverUsingHand);
+            } else if (!serverUsingItem && this.startedUsingItem) {
+                this.stopUsingItem();
+            }
+        }
+    }
+
+    @Override
+    public boolean isUsingItem() {
+        return startedUsingItem;
+    }
+
+    @Override
+    public void stopUsingItem() {
+        super.stopUsingItem();
+        this.startedUsingItem = false;
+    }
+
     @Override
     public boolean isShiftKeyDown() {
         return keys.shift();
@@ -95,7 +144,7 @@ public final class OraclePlayer extends Player {
     // Port of LocalPlayer.aiStep, input-related parts only.
     @Override
     public void aiStep() {
-        if (getAbilities().flying || getAbilities().mayfly || isPassenger() || isUsingItem() || isFallFlying()) {
+        if (getAbilities().flying || getAbilities().mayfly || isPassenger() || isFallFlying()) {
             throw new IllegalStateException("oracle: state not supported by the Phase 1 input port");
         }
         boolean hadForwardImpulse = hasForwardImpulse();
@@ -133,10 +182,22 @@ public final class OraclePlayer extends Player {
                 && (allowedInShallowWater || !isInShallowWater());
     }
 
+    // LocalPlayer.isSlowDueToUsingItem / itemUseSpeedMultiplier (UseEffects).
+    private boolean isSlowDueToUsingItem() {
+        return isUsingItem() && !useItem.getOrDefault(net.minecraft.core.component.DataComponents.USE_EFFECTS,
+                net.minecraft.world.item.component.UseEffects.DEFAULT).canSprint();
+    }
+
+    private float itemUseSpeedMultiplier() {
+        return useItem.getOrDefault(net.minecraft.core.component.DataComponents.USE_EFFECTS,
+                net.minecraft.world.item.component.UseEffects.DEFAULT).speedMultiplier();
+    }
+
     private boolean canStartSprinting() {
         return !isSprinting()
                 && hasForwardImpulse()
                 && isSprintingPossible(getAbilities().flying)
+                && !isSlowDueToUsingItem()
                 && (!isFallFlying() || isUnderWater())
                 && (!isMovingSlowly() || isUnderWater());
     }
@@ -161,6 +222,9 @@ public final class OraclePlayer extends Player {
             return input;
         }
         Vec2 v = input.scale(0.98F);
+        if (isUsingItem() && !isPassenger()) {
+            v = v.scale(itemUseSpeedMultiplier());
+        }
         if (isMovingSlowly()) {
             v = v.scale((float) getAttributeValue(Attributes.SNEAKING_SPEED));
         }

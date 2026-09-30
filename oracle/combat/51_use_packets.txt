@@ -1,0 +1,12 @@
+# Right-click paths that do nothing: A holds use with a sword while looking at B
+# (entity interaction, then the main-hand use, every 4 ticks) and B raises its
+# shield while looking at the ground (use on block first). Neither changes the
+# fight: A's click lands, B's shield blocks the second one.
+start A item=golden_sword
+start B offhand=shield
+20 idle | idle
+9  use | use pitch=70
+1  tap | use pitch=0
+6  use | use
+1  tap | use
+10 idle | use

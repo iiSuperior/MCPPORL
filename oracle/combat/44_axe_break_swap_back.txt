@@ -1,0 +1,14 @@
+# The shield-break combo: netherite sword in slot 0, wooden axe in slot 1. A swaps
+# to the axe, hits the raised shield a few ticks later (weak, but the disable does
+# not depend on strength), swaps back and hits with the sword at full strength.
+start A hotbar=netherite_sword,wooden_axe
+start B offhand=shield
+20 idle | idle
+8  idle | use
+1  slot=1 | use
+3  idle | use
+1  tap | use
+1  slot=0 | use
+14 idle | use
+1  tap | use
+20 idle | use

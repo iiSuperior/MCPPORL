@@ -1,0 +1,12 @@
+# Hotbar swap: wooden sword in slot 0, netherite sword in slot 1. The slot key
+# changes the client's selection at once; the ServerboundSetCarriedItemPacket goes
+# out with the next tick's MultiPlayerGameMode.tick, and the server's Player.tick
+# then resets the attack strength (a different item) and applies the new
+# attribute modifiers. A waits for full strength and hits: 1.0 + 7.0.
+start A hotbar=wooden_sword,netherite_sword
+start B
+20 idle | idle
+1  slot=1 | idle
+14 idle | idle
+1  tap | idle
+20 idle | idle

@@ -1,0 +1,15 @@
+# While B blocks with the off-hand shield: clicks are eaten, a hotbar swap does not
+# lower the shield (only a main-hand use is stopped), and the swap is sent on the
+# next tick. A hits the raised shield after the swap: blocked.
+start A item=iron_sword
+start B hotbar=stone_sword,golden_axe offhand=shield
+20 idle | idle
+6  idle | use
+1  idle | use tap
+1  idle | use slot=1
+3  idle | use attack
+1  tap  | use
+10 idle | use
+3  idle | idle
+1  idle | tap
+15 idle | idle
