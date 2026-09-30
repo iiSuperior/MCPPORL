@@ -147,6 +147,46 @@ so the attack-strength reset the swap causes costs nothing), and never swaps
 back. Stuck with the wooden sword it won 1% against the tactician; with the
 swap it is back to `sword9`'s level with a better sword.
 
+### Experiment B: netherite sword in hand, wooden axe in slot 1, vs a shield
+
+The opponent is a scripted shield user (`BatchEnv::shielder`, fair): it walks
+in with a diamond sword and keeps its off-hand shield raised, lowers it
+voluntarily at random (a per-tick chance), and swings at full strength while
+it is down or disabled. Variants: never lowering it voluntarily, and panicking
+(never lowering it again at or below a health threshold, which its player
+sees). Before training, `sword9` with this loadout wins 20% against the
+standard shield user (lowers ~every 33 ticks), 2% against a stubborn one
+(every 200) and 0% (all draws) against one that never lowers it; it hits the
+raised shield 3 to 18 times a fight and never touches the axe.
+
+| Run | Opponents | What it learned |
+|---|---|---|
+| B1 | all lower at random (1 to 6% per tick) | **Wait, don't swap.** No axe; hits land while the shield is down (2.1 of 2.4 hits), clicks per fight halved; 20% to 84% wins vs the standard shield user within 40 updates. Against these opponents the axe is unnecessary, and it does not waste time on it. |
+| B2 | 30% never lower, all panic at 0 to 10 health | **Actively suppresses the axe key**: P(slot 1) falls from 1.7% to 0.24% per tick; 100% draws vs the never-lowering user. |
+| B3 | all never lower; hotbar head starts less certain | Random axe hits early (3.8 damage a fight), then un-learned (0.5). |
+| B4 | half start **holding the axe**; 50% never lower, panic | Updates 20-30: disables the shield and **swaps back to the netherite** (0.4 swap-backs a fight, 12-15% wins where all else drew); then drops the axe on tick 1 instead (the Experiment A lesson). Updates 60-80: learns "shield up means axe" (axe swaps with the shield raised, 0 to 23 a fight) but dithers without hitting. |
+
+Why the axe loses: a scripted check (`sword9`'s movement and aim, plus: shield
+up -> axe, click; shield down -> netherite), 128 fights each:
+
+| Shield user | plain: win / draw | combo: win / draw | combo damage dealt / taken |
+|---|---|---|---|
+| never lowers | 0% / 100% | 10% / 23% | 7.5 / 12.6 |
+| never lowers, 5-tick reaction to the break | 0% / 100% | 22% / 23% | 9.2 / 11.5 |
+| panics at 8 health | 3% / 40% | 4% / 20% | 9.3 / 17.3 |
+| standard | 21% / 0% | 9% / 0% | 9.9 / 19.1 |
+
+A tempo rule of 26.3 (all bit-exact, scenarios 43 to 45): the blocker stands
+at full attack strength behind its shield; the disabling blow spends the
+attacker's strength (every attack resets it) and each swap resets it again;
+so the moment the shield drops the blocker has the first full-strength hit.
+With netherite (8) against diamond (7) a lost first strike loses the trade.
+Under a damage-and-win reward the learner's refusal to break the shield is
+correct play against an opponent that counters at once; a draw costs it
+nothing. The disable does not depend on attack strength (44), and a swap-hit
+disables with the sword's attributes (45), which makes the break cheaper but
+does not give back the first strike.
+
 ### What went wrong on the way (runs 1 to 7)
 
 Each failure was the reward or the rules, not the code:
