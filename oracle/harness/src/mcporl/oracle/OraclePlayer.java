@@ -67,6 +67,13 @@ public final class OraclePlayer extends Player {
     protected void pushEntities() {
     }
 
+    // LocalPlayer.getViewYRot: the crosshair follows the body yaw, not the
+    // head yaw LivingEntity uses (which only catches up in aiStep).
+    @Override
+    public float getViewYRot(final float a) {
+        return this.getYRot(a);
+    }
+
     @Override
     public boolean isShiftKeyDown() {
         return keys.shift();

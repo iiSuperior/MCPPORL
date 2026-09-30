@@ -1,12 +1,12 @@
-# A hits, clicks again into B's damage cooldown (no damage, but A's attack
-# strength resets), then lands a half-strength hit 2 ticks later:
-# damage x(0.2 + 0.8 * 0.5^2), no crit, no sprint knockback.
+# A hits, walks back into reach and clicks into B's damage cooldown (no
+# damage, but A's attack strength resets), then lands a half-strength hit
+# 2 ticks later: damage x(0.2 + 0.8 * 0.5^2), no crit, no sprint knockback.
 start A x=0.5 z=0.5 yaw=0
 start B x=0.5 z=2.8 yaw=180
 20 idle | idle
 1 attack | idle
-8 idle | idle
-1 attack | idle
-1 idle | idle
-1 attack | idle
+8 w | idle
+1 w attack | idle
+1 w | idle
+1 w attack | idle
 30 idle | idle

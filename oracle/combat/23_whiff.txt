@@ -1,0 +1,11 @@
+# A clicks while B is out of reach: a whiff. For the next 9 ticks every click
+# is eaten (Minecraft.missTime), even once B has walked into reach.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=4.3 yaw=180
+20 idle | idle
+1 attack | w
+4 idle | w
+1 attack | idle
+4 idle | idle
+1 attack | idle
+30 idle | idle

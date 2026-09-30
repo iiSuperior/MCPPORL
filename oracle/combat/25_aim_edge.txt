@@ -1,0 +1,9 @@
+# Aim at the edge of B's hitbox: 8 degrees off-centre misses by about a
+# centimetre at this range, 5 degrees hits.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=3.0 yaw=180
+20 idle | idle
+1 attack yaw=8 | idle
+10 idle yaw=5 | idle
+1 attack | idle
+30 idle | idle

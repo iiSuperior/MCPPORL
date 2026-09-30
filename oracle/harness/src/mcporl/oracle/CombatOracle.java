@@ -32,16 +32,27 @@ import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerLoadedPacket;
+import net.minecraft.network.protocol.game.ServerboundPunchPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.util.Mth;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.PositionMoveRotation;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Input;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -70,6 +81,9 @@ public final class CombatOracle {
         boolean lastOnGround, lastHorizontalCollision, wasSprinting;
         int positionReminder;
         Input lastSentInput = Input.EMPTY;
+        // Minecraft.missTime: clicks are ignored while it is positive (set by a whiff)
+        int missTime;
+        HitResult pick;  // this tick's crosshair pick
         // per-tick trace flags
         boolean gotVelocity, sentAttack;
         int teleports;  // server position corrections applied during the scenario
@@ -88,6 +102,7 @@ public final class CombatOracle {
             "server.sprinting:bool", "server.health:f32", "server.hurtTime:i32", "server.damageCooldown:i32",
             "server.onGround:bool", "server.fallDistance:f64", "server.attackStrength:f32",
             "server.vel.x:f64", "server.vel.y:f64", "server.vel.z:f64", "server.yRot:f32", "speedAttr:f64",
+            "pick:i32", "pick.x:f64", "pick.y:f64", "pick.z:f64", "missTime:i32",
             "gotVelocity:bool", "sentAttack:bool", "teleports:i32"};
 
     private final MinecraftServer server;
@@ -189,21 +204,34 @@ public final class CombatOracle {
         return side;
     }
 
-    /** One client tick for `me`: keybinds (attack), movement, then sendChanges. */
+    /** One client tick for `me`: pick, keybinds (click), movement, then sendChanges (Minecraft.tick). */
     private void step(Side me, Side other, CombatScenario.Input in, int targetId) {
         OraclePlayer c = me.client;
         me.sentAttack = false;
-        // Minecraft.tick: handleKeybinds runs before level.tickEntities. The attack
-        // packet therefore precedes this tick's movement/rotation packet. The
-        // client-side Player.attack deals no damage (hurtClient is false), so the
-        // only local effect is resetting the attack strength ticker.
-        if (in.attack()) {
-            me.toServer.add(new ServerboundAttackPacket(targetId));
-            c.resetAttackStrengthTicker();
-            me.sentAttack = true;
-        }
+        // The mouse turns the player between ticks, so this tick's rotation is in
+        // place before the pick, the click and the movement.
         c.setYRot(in.yaw());
         c.setXRot(in.pitch());
+        // Minecraft.tick: pick(1.0F), then handleKeybinds -> startAttack, then missTime--.
+        me.pick = pick(c, other.server);
+        if (in.attack() && me.missTime <= 0) {
+            switch (me.pick.getType()) {
+                case ENTITY -> {
+                    // MultiPlayerGameMode.attack: the packet, then the client-side
+                    // Player.attack (a no-op against another player) and the reset.
+                    me.toServer.add(new ServerboundAttackPacket(targetId));
+                    c.resetAttackStrengthTicker();
+                    me.sentAttack = true;
+                }
+                case BLOCK -> throw new IllegalStateException(me.name + " clicked a block: mining is out of scope");
+                case MISS -> {
+                    me.missTime = 10;  // gameMode.hasMissTime(): survival
+                    c.resetAttackStrengthTicker();
+                }
+            }
+            me.toServer.add(ServerboundPunchPacket.INSTANCE);  // after the swing, for every click not eaten
+        }
+        if (me.missTime > 0) me.missTime--;
         c.setKeys(new Input(in.forward(), in.backward(), in.left(), in.right(), in.jump(), in.shift(), in.sprint()));
         c.setOldPosAndRot();
         c.tickCount++;
@@ -212,6 +240,42 @@ public final class CombatOracle {
         // Minecraft.tick ends every client tick with this packet; the server uses it
         // to reset per-tick bookkeeping such as receivedPositionThisTick.
         me.toServer.add(ServerboundClientTickEndPacket.INSTANCE);
+    }
+
+    /**
+     * LocalPlayer.pick(camera, blockRange, entityRange, 1.0F) for a bare hand
+     * (raycastHitResult without an ATTACK_RANGE component). The candidate is the
+     * target's server copy: the freshest position the client has been sent.
+     */
+    static HitResult pick(OraclePlayer camera, Entity target) {
+        double blockInteractionRange = camera.blockInteractionRange();
+        double entityInteractionRange = camera.entityInteractionRange();
+        double maxDistance = Math.max(blockInteractionRange, entityInteractionRange);
+        double maxDistanceSq = Mth.square(maxDistance);
+        Vec3 from = camera.getEyePosition(1.0F);
+        HitResult blockHitResult = camera.pick(maxDistance, 1.0F, false);
+        double blockDistanceSq = blockHitResult.getLocation().distanceToSqr(from);
+        if (blockHitResult.getType() != HitResult.Type.MISS) {
+            maxDistanceSq = blockDistanceSq;
+            maxDistance = Math.sqrt(maxDistanceSq);
+        }
+        Vec3 direction = camera.getViewVector(1.0F);
+        Vec3 to = from.add(direction.x * maxDistance, direction.y * maxDistance, direction.z * maxDistance);
+        AABB box = camera.getBoundingBox().expandTowards(direction.scale(maxDistance)).inflate(1.0, 1.0, 1.0);
+        EntityHitResult entityHitResult = ProjectileUtil.getEntityHitResult(
+                camera, from, to, box, e -> e == target && EntitySelector.CAN_BE_PICKED.test(e), maxDistanceSq);
+        return entityHitResult != null && entityHitResult.getLocation().distanceToSqr(from) < blockDistanceSq
+                ? filterHitResult(entityHitResult, from, entityInteractionRange)
+                : filterHitResult(blockHitResult, from, blockInteractionRange);
+    }
+
+    private static HitResult filterHitResult(HitResult hitResult, Vec3 from, double maxRange) {
+        Vec3 hitLocation = hitResult.getLocation();
+        if (!hitLocation.closerThan(from, maxRange)) {
+            Direction direction = Direction.getApproximateNearest(hitLocation.x - from.x, hitLocation.y - from.y, hitLocation.z - from.z);
+            return BlockHitResult.miss(hitLocation, direction, BlockPos.containing(hitLocation));
+        }
+        return hitResult;
     }
 
     /** Port of LocalPlayer.sendChanges / sendPosition / sendIsSprintingIfNeeded (not a passenger). */
@@ -278,6 +342,7 @@ public final class CombatOracle {
         else if (p instanceof ServerboundAcceptTeleportationPacket t) c.handleAcceptTeleportPacket(t);
         else if (p instanceof ServerboundPlayerLoadedPacket l) c.handleAcceptPlayerLoad(l);
         else if (p instanceof ServerboundClientTickEndPacket e) c.handleClientTickEnd(e);
+        else if (p instanceof ServerboundPunchPacket pp) c.handlePunch(pp);
         else throw new IllegalStateException("no handler for " + p.getClass().getSimpleName());
     }
 
@@ -403,8 +468,85 @@ public final class CombatOracle {
                 + ", \"server.vel.z\": " + OracleMain.hex(sp.getDeltaMovement().z)
                 + ", \"server.yRot\": " + OracleMain.hex(sp.getYRot())
                 + ", \"speedAttr\": " + OracleMain.hex(c.getAttributeValue(Attributes.MOVEMENT_SPEED))
+                + ", \"pick\": " + s.pick.getType().ordinal()
+                + ", \"pick.x\": " + OracleMain.hex(s.pick.getLocation().x)
+                + ", \"pick.y\": " + OracleMain.hex(s.pick.getLocation().y)
+                + ", \"pick.z\": " + OracleMain.hex(s.pick.getLocation().z)
+                + ", \"missTime\": " + s.missTime
                 + ", \"gotVelocity\": " + s.gotVelocity + ", \"sentAttack\": " + s.sentAttack
                 + ", \"teleports\": " + s.teleports + "}";
+    }
+
+    /** Stone blocks the pick probe adds to the flat arena, to exercise occlusion. */
+    static final int[][] PROBE_BLOCKS = {{2, -60, 2}, {2, -59, 2}, {-2, -60, 1}, {0, -58, -2}, {-1, -60, -1}};
+
+    /**
+     * Random crosshair picks resolved by vanilla (the same path as a click), for
+     * the simulator's pick port. One line per case, all values as hex bits:
+     * xo yo zo x y z yRot xRot targetX targetY targetZ -> type hitX hitY hitZ.
+     */
+    void pickProbe(Path out, int cases) throws IOException {
+        for (int dx = -8; dx <= 8; dx++) for (int dz = -8; dz <= 8; dz++) {
+            level.setChunkForced(dx, dz, true);
+            level.getChunk(dx, dz);
+        }
+        for (int[] b : PROBE_BLOCKS) level.setBlockAndUpdate(new BlockPos(b[0], b[1], b[2]), Blocks.STONE.defaultBlockState());
+        Side a = spawn("A", new CombatScenario.Start(0.5, 0.5, 0.0F));
+        Side b = spawn("B", new CombatScenario.Start(0.5, 3.0, 180.0F));
+        java.util.Random rnd = new java.util.Random(20260930L);
+        int[] counts = new int[3];
+        try (Writer w = Files.newBufferedWriter(out)) {
+            w.write("# pick golden (26.3): xo yo zo x y z yRot xRot tx ty tz -> type hx hy hz; flat world at y=-60 plus stone at");
+            for (int[] bl : PROBE_BLOCKS) w.write(" " + bl[0] + "," + bl[1] + "," + bl[2]);
+            w.write('\n');
+            for (int i = 0; i < cases; i++) {
+                double x = 0.5 + (rnd.nextDouble() * 5.0 - 2.5);
+                double z = 0.5 + (rnd.nextDouble() * 5.0 - 2.5);
+                double y = -60.0 + (rnd.nextBoolean() ? 0.0 : rnd.nextDouble() * 1.3);
+                double xo = x + (rnd.nextDouble() - 0.5) * 0.8;
+                double yo = Math.max(-60.0, y + (rnd.nextDouble() - 0.5) * 0.8);
+                double zo = z + (rnd.nextDouble() - 0.5) * 0.8;
+                double tx = x + (rnd.nextDouble() * 8.0 - 4.0);
+                double tz = z + (rnd.nextDouble() * 8.0 - 4.0);
+                double ty = -60.0 + (rnd.nextBoolean() ? 0.0 : rnd.nextDouble() * 1.5);
+                float yRot, xRot;
+                if (rnd.nextInt(3) > 0) {
+                    // Aim near the target's body so a good share of cases hit it or graze it.
+                    double ax = tx + (rnd.nextDouble() - 0.5) * 1.2 - x;
+                    double ay = ty + rnd.nextDouble() * 2.0 - (y + 1.62);
+                    double az = tz + (rnd.nextDouble() - 0.5) * 1.2 - z;
+                    yRot = (float) (Math.atan2(-ax, az) * 180.0 / Math.PI) + (rnd.nextFloat() - 0.5F) * 360.0F * (rnd.nextInt(4) == 0 ? 1.0F : 0.0F);
+                    xRot = Mth.clamp((float) (-Math.atan2(ay, Math.sqrt(ax * ax + az * az)) * 180.0 / Math.PI), -90.0F, 90.0F);
+                } else {
+                    yRot = rnd.nextFloat() * 360.0F - 180.0F;
+                    xRot = rnd.nextFloat() * 180.0F - 90.0F;
+                }
+                OraclePlayer c = a.client;
+                c.setPos(xo, yo, zo);
+                c.setOldPosAndRot();
+                c.setPos(x, y, z);
+                c.setYRot(yRot);
+                c.setXRot(xRot);
+                b.server.absSnapTo(tx, ty, tz);
+                HitResult hit = pick(c, b.server);
+                counts[hit.getType().ordinal()]++;
+                Vec3 l = hit.getLocation();
+                w.write(String.join(" ", hx(xo), hx(yo), hx(zo), hx(x), hx(y), hx(z), hx(yRot), hx(xRot),
+                        hx(tx), hx(ty), hx(tz), Integer.toString(hit.getType().ordinal()), hx(l.x), hx(l.y), hx(l.z)));
+                w.write('\n');
+            }
+        } finally {
+            for (Side side : List.of(a, b)) server.getPlayerList().remove(side.server);
+        }
+        System.out.println("[oracle] pick probe: " + cases + " cases, miss/block/entity = " + counts[0] + "/" + counts[1] + "/" + counts[2]);
+    }
+
+    private static String hx(double d) {
+        return String.format("%016x", Double.doubleToRawLongBits(d));
+    }
+
+    private static String hx(float f) {
+        return String.format("%08x", Float.floatToRawIntBits(f));
     }
 
     static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
@@ -431,6 +573,23 @@ public final class CombatOracle {
                 System.out.println("[oracle] FAIL " + s.name() + ": " + e.getCause());
                 e.getCause().printStackTrace(System.out);
             }
+        }
+        // Last: it adds blocks to the arena.
+        java.util.concurrent.CompletableFuture<Void> probe = new java.util.concurrent.CompletableFuture<>();
+        server.execute(() -> {
+            try {
+                new CombatOracle(server).pickProbe(outDir.resolve("pick_golden.txt"), 4000);
+                probe.complete(null);
+            } catch (Throwable t) {
+                probe.completeExceptionally(t);
+            }
+        });
+        try {
+            probe.join();
+        } catch (Exception e) {
+            failures.add("pick_probe");
+            System.out.println("[oracle] FAIL pick probe: " + e.getCause());
+            e.getCause().printStackTrace(System.out);
         }
     }
 }
