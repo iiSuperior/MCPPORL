@@ -56,6 +56,12 @@ after the hit; "displacement" is B's z-change over that tick.
 | `28_trade_kill` | Both on 1 health, same-tick clicks: A's packets come first, B dies and B's hit is ignored | 1.0 (A survives) | 0.7 |
 | `29_crit_kill` | A crit on exactly 1.5 health: health reaches 0.0 | 1.5 | as standing |
 | `30_lagged_whiff` | B's hitbox is 2.66 from A's eye, but A sees B 0.42 further back (3.07): the click whiffs | none | none |
+| `31_sword_hit` | Diamond sword: 1.0 + 6.0 attack damage (`item=diamond_sword` on a `start` line) | 7.0 | as standing |
+| `32_axe_hit` | Diamond axe: 1.0 + 8.0, 20-tick cooldown | 9.0 | as standing |
+| `33_sword_early_click` | Sword cooldown 12.5 ticks: a click into B's damage cooldown, then one at strength 0.44 | 7.0, 0, 2.48 | as standing |
+| `34_sword_crit` | Iron sword crit: (1.0 + 5.0) x 1.5 | 9.0 | as standing |
+| `35_sword_vs_axe_trade` | Netherite sword (8.0) vs stone axe (9.0), same tick, both sprint hits | 8.0 / 9.0 | 0.7 both |
+| `36_wood_sword_combo` | Wooden sword 4.0 per hit: two full-strength hits kill B at 8 health | 4.0 + 4.0 | as standing |
 
 Scenarios can set `health=` on a `start` line; a scenario ends on the tick a
 player dies. Overlapping players' server copies push each other (see 11, 13,

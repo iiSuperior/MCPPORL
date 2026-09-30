@@ -58,10 +58,11 @@ Phase 1 in progress. Target version: **26.3** (unobfuscated, Java 25).
   flat-ground golden traces **bit for bit**: standing, walking, sprinting,
   sprint-jumping, jumping, diagonal strafing, sprint-turning, sneaking and
   mid-air turns. `ctest` runs these parity checks offline.
-- The C++ melee port (`sim/include/mcp/duel.hpp`) reproduces all 21
+- The C++ melee port (`sim/include/mcp/duel.hpp`) reproduces all 27
   two-player combat traces **bit for bit**: plain, sprint and critical hits,
   the 180 hit, invulnerability, W-tap, moving, sprinting and airborne victims,
-  same-tick trades, partial-strength hits and the post-hit sprint echo
+  same-tick trades, partial-strength hits, the post-hit sprint echo, and every
+  sword and axe (`weapons.hpp`: damage, attack speed, cooldown)
   (`combat_*` tests; `duel_replay` and `bench_duel` tools).
 - Clicks are resolved by a port of the client's crosshair pick (`pick.hpp`,
   4000 vanilla picks matched bit for bit), so the bot can only hit what it
