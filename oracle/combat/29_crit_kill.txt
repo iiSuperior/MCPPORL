@@ -1,0 +1,8 @@
+# A crit (1.5 damage) on B at exactly 1.5 health: health reaches 0.0 exactly.
+start A x=0.5 z=0.5 yaw=0
+start B x=0.5 z=2.8 yaw=180 health=1.5
+20 idle | idle
+1 jump | idle
+7 idle | idle
+1 attack pitch=20 | idle
+30 idle | idle

@@ -10,7 +10,7 @@ import java.util.Locale;
 /** Two-player combat script (see oracle/combat/README.md). */
 public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
 
-    public record Start(double x, double z, float yaw) {}
+    public record Start(double x, double z, float yaw, float health) {}
 
     /**
      * Inputs for one player on one tick. yaw/pitch are the rotation during the tick
@@ -35,7 +35,7 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
 
     public static CombatScenario parse(Path file) throws IOException {
         String name = file.getFileName().toString().replaceFirst("\\.txt$", "");
-        Start a = new Start(0.5, 0.5, 0.0F), b = new Start(0.5, 3.0, 180.0F);
+        Start a = new Start(0.5, 0.5, 0.0F, 20.0F), b = new Start(0.5, 3.0, 180.0F, 20.0F);
         List<String[]> segments = new ArrayList<>();
         int lineNo = 0;
         for (String raw : Files.readAllLines(file)) {
@@ -46,17 +46,18 @@ public record CombatScenario(String name, Start a, Start b, List<Tick> ticks) {
                 if (line.startsWith("start ")) {
                     String[] tok = line.split("\\s+");
                     double x = 0.5, z = 0.5;
-                    float yaw = 0.0F;
+                    float yaw = 0.0F, health = 20.0F;
                     for (int i = 2; i < tok.length; i++) {
                         String[] kv = tok[i].split("=", 2);
                         switch (kv[0]) {
                             case "x" -> x = Double.parseDouble(kv[1]);
                             case "z" -> z = Double.parseDouble(kv[1]);
                             case "yaw" -> yaw = Float.parseFloat(kv[1]);
+                            case "health" -> health = Float.parseFloat(kv[1]);
                             default -> throw new IllegalArgumentException("unknown start key " + kv[0]);
                         }
                     }
-                    Start s = new Start(x, z, yaw);
+                    Start s = new Start(x, z, yaw, health);
                     switch (tok[1]) {
                         case "a" -> a = s;
                         case "b" -> b = s;

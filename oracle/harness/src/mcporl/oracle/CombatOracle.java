@@ -166,6 +166,12 @@ public final class CombatOracle {
                 requireLoaded(b, t);
                 w.write(line(t++, tick, a, b));
                 w.write('\n');
+                // The episode ends on the tick a player dies; that tick is traced in full.
+                if (a.server.isDeadOrDying() || b.server.isDeadOrDying()) {
+                    System.out.println("[oracle] " + s.name() + ": " + (a.server.isDeadOrDying() ? "A" : "")
+                            + (b.server.isDeadOrDying() ? "B" : "") + " died at t=" + (t - 1));
+                    break;
+                }
                 deliver(a);
                 deliver(b);
             }
@@ -193,6 +199,7 @@ public final class CombatOracle {
         Connection connection = new Connection(PacketFlow.SERVERBOUND);
         EmbeddedChannel channel = new EmbeddedChannel(new ChannelHandler[] {connection});
         server.getPlayerList().placeNewPlayer(connection, sp, cookie);
+        if (start.health() != sp.getMaxHealth()) sp.setHealth(start.health());
 
         OraclePlayer cp = new OraclePlayer(level, profile);
         cp.setPos(start.x(), y, start.z());
@@ -584,8 +591,8 @@ public final class CombatOracle {
             level.getChunk(dx, dz);
         }
         for (int[] b : PROBE_BLOCKS) level.setBlockAndUpdate(new BlockPos(b[0], b[1], b[2]), Blocks.STONE.defaultBlockState());
-        Side a = spawn("A", new CombatScenario.Start(0.5, 0.5, 0.0F));
-        Side b = spawn("B", new CombatScenario.Start(0.5, 3.0, 180.0F));
+        Side a = spawn("A", new CombatScenario.Start(0.5, 0.5, 0.0F, 20.0F));
+        Side b = spawn("B", new CombatScenario.Start(0.5, 3.0, 180.0F, 20.0F));
         java.util.Random rnd = new java.util.Random(20260930L);
         int[] counts = new int[3];
         try (Writer w = Files.newBufferedWriter(out)) {

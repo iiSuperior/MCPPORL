@@ -1,0 +1,8 @@
+# Both on 1 health click on the same tick. A's packets are handled first, so
+# A's hit kills B before B's attack is evaluated: does B's hit still land?
+start A x=0.5 z=0.5 yaw=0 health=1
+start B x=0.5 z=5.0 yaw=180 health=1
+20 idle | idle
+4 w sprint | w sprint
+1 w sprint attack | w sprint attack
+20 idle | idle
