@@ -2,20 +2,8 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 32: key handling order, use/interact packets, head rotation, blocking movement, cooldown sync.
-net.minecraft.client.Minecraft handleKeybinds startAttack continueAttack :grep=gameMode\.tick\(|handleKeybinds\(\);|gameRenderer\.pick|missTime--|rightClickDelay--
-net.minecraft.client.multiplayer.MultiPlayerGameMode tick interact attack startPrediction
-net.minecraft.client.player.LocalPlayer canStartSprinting shouldStopRunSprinting modifyInput applyInput onSyncedDataUpdated tick getUsedItemHand
-net.minecraft.world.entity.LivingEntity tick aiStep getSecondsToDisableBlocking getActiveItem getWeaponItem dealDefaultKnockback onSyncedDataUpdated getUsedItemHand tickHeadTurn setYHeadRot getYHeadRot setLivingEntityFlag
-net.minecraft.world.entity.player.Player aiStep attack getWeaponItem interactOn interact
-net.minecraft.server.network.ServerGamePacketListenerImpl handleInteract handleUseItemOn handleMovePlayer
-net.minecraft.server.level.ServerPlayer doTick tick :grep=Cooldown|yHeadRot|setYHeadRot
-net.minecraft.world.item.component.Weapon :all
-net.minecraft.world.item.component.UseEffects :all
-net.minecraft.world.item.ShieldItem :all
-net.minecraft.world.item.Items :grep=SHIELD|WOODEN_AXE|NETHERITE_SWORD|WOODEN_SWORD
-net.minecraft.world.item.Item :grep=Weapon\(|BLOCKS_ATTACKS|USE_EFFECTS|public Item\.Properties (sword|axe|shield)
-net.minecraft.world.item.ToolMaterial :all
-net.minecraft.world.damagesource.DamageSource getSourcePosition
-net.minecraft.client.multiplayer.ClientPacketListener handleItemCooldown handleSetEntityData handleSetHeldSlot
-net.minecraft.world.entity.Entity absSnapRotationTo getViewVector calculateViewVector
+# Batch 33: which client actions flush the carried-item slot; use-on-block prediction.
+net.minecraft.client.multiplayer.MultiPlayerGameMode startDestroyBlock continueDestroyBlock stopDestroyBlock useItemOn performUseItemOn isDestroying
+net.minecraft.world.entity.Entity interact
+net.minecraft.world.item.Item interactLivingEntity useOn
+net.minecraft.client.player.LocalPlayer itemUsed isHandsBusy
