@@ -11,9 +11,12 @@
 // LivingEntity.hurtServer/actuallyHurt/knockback/dealDefaultKnockback/baseTick,
 // Entity.checkFallDamage, AttackRange.isInRange, ServerEntity.sendChanges.
 //
+// Each client sees the other player through the entity tracker and the
+// client-side interpolation of tracker.hpp, and aims at that view.
+//
 // Scope: bare hands, no armor or effects, no shields, no totems, no fall
-// damage, no sneaking, no player-player pushing, full-cube flat arenas, no
-// health regeneration (the oracle disables it). Leaving that scope sets
+// damage, no sneaking, full-cube flat arenas, no health regeneration (the
+// oracle disables it). Leaving that scope sets
 // `unsupported` instead of silently diverging. A death ends the episode: the
 // killing tick is simulated in full, nothing after it.
 #pragma once
@@ -24,6 +27,7 @@
 #include "mcp/pick.hpp"
 #include "mcp/player.hpp"
 #include "mcp/rng.hpp"
+#include "mcp/tracker.hpp"
 
 namespace mcp {
 
@@ -98,6 +102,9 @@ struct ServerCopy {
     double lastGoodX = 0.0, lastGoodY = 0.0, lastGoodZ = 0.0;
     // Entity data and attribute changes not yet echoed to the player's client.
     bool sprintFlagDirty = false, speedAttributeDirty = false;
+    // Other synched data changed (health), and Entity.needsSync (knockback,
+    // pushing): either makes the tracker consider a move packet off its cadence.
+    bool dataDirty = false, needsSync = false;
 
     // LivingEntity.setSprinting with SynchedEntityData / AttributeInstance dirtiness.
     MCP_HD void setSprinting(bool value) {
@@ -142,9 +149,16 @@ struct DuelPlayer {
     Vec3 pickFrom{};  // eye position of the last pick
     bool lastAttackHeld = false;  // the attack key state sampled last tick
     ServerCopy server;
+    EntityTracker tracker;  // the server's tracker for this player (ServerEntity)
     ClientSendState send;
     ClientPackets packets;
     ServerReplies replies;
+    // The other player as this client sees it (RemotePlayer), the tracker
+    // packet about it waiting for delivery, and the kinds delivered before
+    // this tick (MoveKind bits, 16 for the AddEntity packet).
+    RemoteView view;
+    EntityMove viewInbox;
+    int32_t viewRecv = 0;
     // per-tick trace flags
     bool gotVelocity = false, sentAttack = false;
 };
@@ -308,10 +322,20 @@ MCP_HD void clientTick(DuelPlayer& me, const DuelInput& in, const AABB& target, 
     s.lastHorizontalCollision = c.horizontalCollision;
 }
 
+// The remote player's hitbox as a client sees it (EntityDimensions.makeBoundingBox).
+MCP_HD inline AABB viewBox(const RemoteView& v) {
+    double w = static_cast<double>(PlayerConstants::kHalfWidth);
+    return AABB{v.pos.x - w, v.pos.y, v.pos.z - w, v.pos.x + w, v.pos.y + static_cast<double>(PlayerConstants::kHeightStanding),
+                v.pos.z + w};
+}
+
 // ClientPacketListener: apply what the server sent (before the next client tick).
 MCP_HD inline void deliver(DuelPlayer& me) {
     ServerReplies& r = me.replies;
     me.gotVelocity = false;
+    me.viewRecv = static_cast<int32_t>(me.viewInbox.kind);
+    me.view.receive(me.viewInbox);
+    me.viewInbox = EntityMove{};
     if (r.motion) {
         me.client.vel = lpvec3::roundTrip(r.motionVelocity);  // Entity.lerpMotion
         me.gotVelocity = true;
@@ -338,6 +362,7 @@ MCP_HD inline void serverJumpFromGround(ServerCopy& sp, const float* sinTab) {
         b.vel = b.vel.add(static_cast<double>(-mth::sin(sinTab, static_cast<double>(angle))) * 0.2, 0.0,
                           static_cast<double>(mth::cos(sinTab, static_cast<double>(angle))) * 0.2);
     }
+    sp.needsSync = true;
 }
 
 // Entity.checkFallDamage as reached through doCheckFallDamage (chunks loaded).
@@ -388,6 +413,7 @@ MCP_HD void handleMove(ServerCopy& sp, const MovePacket& pk, const World& w, con
 MCP_HD inline void knockback(ServerCopy& victim, double power, double xd, double zd) {
     power *= 1.0 - 0.0;  // KNOCKBACK_RESISTANCE
     if (power <= 0.0) return;
+    victim.needsSync = true;
     while (xd * xd + zd * zd < static_cast<double>(1.0E-5F)) {
         // Vanilla picks a random direction from the victim's RandomSource: same
         // distribution here, not the same numbers.
@@ -420,7 +446,11 @@ MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float da
     }
     // actuallyHurt: no armor, resistance, protection or absorption in scope,
     // so the damage reaches health unchanged.
-    if (dealt != 0.0F) victim.health = mth::clamp(victim.health - dealt, 0.0F, CombatConstants::kMaxHealth);
+    if (dealt != 0.0F) {  // setHealth: the synched value is dirty only if it changed
+        float h = mth::clamp(victim.health - dealt, 0.0F, CombatConstants::kMaxHealth);
+        if (h != victim.health) victim.dataDirty = true;
+        victim.health = h;
+    }
     if (tookFullDamage) victim.hurtTime = CombatConstants::kHurtDuration;
     if (tookFullDamage) {
         victim.syncVelocity = true;  // markHurt
@@ -497,8 +527,14 @@ MCP_HD inline void push(ServerCopy& target, ServerCopy& pusher) {
     za *= pow;
     xa *= static_cast<double>(0.05F);
     za *= static_cast<double>(0.05F);
-    if (pushable(target)) target.body.vel = target.body.vel.add(-xa, 0.0, -za);
-    if (pushable(pusher)) pusher.body.vel = pusher.body.vel.add(xa, 0.0, za);
+    if (pushable(target)) {  // Entity.push(x, y, z) also sets needsSync
+        target.body.vel = target.body.vel.add(-xa, 0.0, -za);
+        target.needsSync = true;
+    }
+    if (pushable(pusher)) {
+        pusher.body.vel = pusher.body.vel.add(xa, 0.0, za);
+        pusher.needsSync = true;
+    }
 }
 
 // LivingEntity.pushEntities on the server: every pushable entity whose box
@@ -567,7 +603,6 @@ struct DuelStart {
 // A zero-latency duel, stepped exactly like the oracle harness.
 struct Duel {
     DuelPlayer p[2];
-    int32_t clientPushTicks = 0;  // ticks where a real client would have been pushed (not modelled)
 
     // Place both players and run the login handshake (three server ticks).
     template <typename World>
@@ -593,14 +628,40 @@ struct Duel {
         s.lastGoodZ = z;
         s.health = health;
         for (int32_t k = 0; k < 3; ++k) duel::serverTickPlayer(s, w);
+        // The tracker starts when the player joins (not yet on the ground, the
+        // yaw not yet wrapped by the teleport acknowledgement). The first two
+        // handshake ticks reach nobody: the other client is paired after the
+        // second one (see pairViews).
+        Vec3 pos{x, y, z};
+        d.tracker.start(pos, yaw, 0.0F, false);
+        d.tracker.sendChanges(pos, yaw, 0.0F, false, false, false);
+        d.tracker.sendChanges(pos, s.body.yRot, s.body.xRot, false, false, false);
+    }
+
+    // The end of the login handshake for the views: each client gets the other
+    // player's ClientboundAddEntityPacket, then the third tick's tracker packet
+    // (a position sync, since the server copy has just landed). Call after
+    // spawning both players.
+    MCP_HD void pairViews() {
+        for (int32_t i = 0; i < 2; ++i) {
+            DuelPlayer& viewer = p[1 - i];
+            EntityTracker& tr = p[i].tracker;
+            const Player& b = p[i].server.body;
+            viewer.view.add(tr.base, tr.lastSentYRot, tr.lastSentXRot);
+            viewer.viewInbox = tr.sendChanges(Vec3{b.x, b.y, b.z}, b.yRot, b.xRot, b.onGround, false, false);
+            duel::deliver(viewer);
+        }
     }
 
     template <typename World>
     MCP_HD void step(const DuelInput& a, const DuelInput& b, const World& w, const float* sinTab) {
-        // Each client sees the other where the server last put it (zero latency,
-        // no remote-player interpolation yet).
-        duel::clientTick(p[0], a, p[1].server.body.boundingBox(), w, sinTab);
-        duel::clientTick(p[1], b, p[0].server.body.boundingBox(), w, sinTab);
+        // Each client aims at its view of the other player, then ticks its
+        // entities: itself first, then the remote player (ClientLevel's tick
+        // list is in insertion order).
+        for (int32_t i = 0; i < 2; ++i) {
+            duel::clientTick(p[i], i == 0 ? a : b, duel::viewBox(p[i].view), w, sinTab);
+            p[i].view.clientTick();
+        }
         // Server: each client's packets in send order, then one server tick.
         for (int32_t i = 0; i < 2; ++i) {
             DuelPlayer& me = p[i];
@@ -615,11 +676,16 @@ struct Duel {
             if (pk.sprintCommand != 0 && loaded) me.server.setSprinting(pk.sprintCommand > 0);
             if (pk.move && loaded) duel::handleMove(me.server, pk.movePacket, w, sinTab);
         }
-        // MinecraftServer.tickServer: ServerEntity.sendChanges echoes dirty entity
-        // data (and with it dirty attributes) to the player itself...
+        // MinecraftServer.tickServer: ServerEntity.sendChanges sends the other
+        // client a move packet when due and echoes dirty entity data (and with
+        // it dirty attributes) to the player itself...
         for (int32_t i = 0; i < 2; ++i) {
             ServerCopy& s = p[i].server;
             ServerReplies& r = p[i].replies;
+            p[1 - i].viewInbox = p[i].tracker.sendChanges(Vec3{s.body.x, s.body.y, s.body.z}, s.body.yRot, s.body.xRot,
+                                                          s.body.onGround, s.needsSync, s.sprintFlagDirty || s.dataDirty);
+            s.needsSync = false;
+            s.dataDirty = false;
             if (s.sprintFlagDirty) {
                 r.sprintFlag = true;
                 r.sprintFlagValue = s.body.sprinting;
@@ -641,16 +707,10 @@ struct Duel {
             if (s.damageCooldownTime > 0) s.damageCooldownTime--;
         }
         // ...then each connection's tick (tickPlayer).
+        // Only the server copies push each other: a client is never pushed by
+        // the remote player it sees (Entity.push skips the noPhysics
+        // RemotePlayer, and a client's pushableBy only admits the local player).
         for (int32_t i = 0; i < 2; ++i) duel::serverTickPlayer(p[i].server, w, &p[1 - i].server);
-        // Overlapping players: the server copies push each other (above), but a
-        // real client is also pushed locally by the remote player's interpolated
-        // position. Neither the oracle nor this port models that yet; count it.
-        if (overlapping(p[0].client, p[1].client)) clientPushTicks++;
-    }
-
-    MCP_HD static bool overlapping(const Player& a, const Player& b) {
-        AABB x = a.boundingBox(), y = b.boundingBox();
-        return x.intersects(y.minX, y.minY, y.minZ, y.maxX, y.maxY, y.maxZ);
     }
 
     // Apply the server's replies; call after reading the tick's state.
@@ -665,9 +725,9 @@ struct Duel {
         double y = static_cast<double>(w.surfaceY);
         spawn(0, a.x, y, a.z, a.yaw, w, a.health);
         spawn(1, b.x, y, b.z, b.yaw, w, b.health);
+        pairViews();
         p[0].server.rng = SplitMix64{seed * 2 + 1};
         p[1].server.rng = SplitMix64{seed * 2 + 2};
-        clientPushTicks = 0;
     }
 
     // Draws that cannot match vanilla bit for bit (see ServerCopy::rng).
@@ -683,7 +743,7 @@ struct Duel {
 
     MCP_HD bool unsupported() const {
         return p[0].client.unsupported || p[1].client.unsupported || p[0].server.body.unsupported ||
-               p[1].server.body.unsupported;
+               p[1].server.body.unsupported || p[0].view.unsupported || p[1].view.unsupported;
     }
 };
 

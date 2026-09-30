@@ -751,26 +751,66 @@ public final class CombatOracle {
         return String.format("%08x", Float.floatToRawIntBits(f));
     }
 
-    /** Force-load the arena chunks and tick the server until their entity sections are live. */
-    void settleArena() throws Exception {
+    /** Force-load the arena chunks (on the server thread). */
+    void forceArena() {
         for (int dx = -8; dx <= 8; dx++) for (int dz = -8; dz <= 8; dz++) {
             level.setChunkForced(dx, dz, true);
             level.getChunk(dx, dz);
         }
-        for (int i = 0; i < 40; i++) tickServer.invoke(server, (BooleanSupplier) () -> false);
+    }
+
+    /**
+     * Wait, off the server thread, until the arena chunks are entity-ticking.
+     * Chunks get there asynchronously through the server's own task queue, so
+     * each manual tick runs as its own short task and the queue drains between
+     * them; ticking in a loop inside one task starves the queue and never
+     * finishes. (The manual ticks also cover a server that paused itself for
+     * having no players.)
+     */
+    static void awaitArena(MinecraftServer server) throws Exception {
+        CombatOracle oracle = new CombatOracle(server);
+        int ticks = 0;
+        while (!server.submit((java.util.function.Supplier<Boolean>) oracle::arenaTicking).join()) {
+            if (ticks >= 2000) throw new IllegalStateException("arena chunks are still not entity-ticking after " + ticks + " ticks");
+            server.submit((Runnable) oracle::tickOnce).join();
+            ticks++;
+            Thread.sleep(5);
+        }
+        for (int i = 0; i < 20; i++) server.submit((Runnable) oracle::tickOnce).join();
+        System.out.println("[oracle] arena entity-ticking after " + ticks + " ticks");
+    }
+
+    private void tickOnce() {
+        try {
+            tickServer.invoke(server, (BooleanSupplier) () -> false);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private boolean arenaTicking() {
+        for (int cx = -2; cx <= 2; cx++) for (int cz = -2; cz <= 2; cz++) {
+            if (!level.isPositionEntityTicking(new BlockPos(cx * 16 + 8, -60, cz * 16 + 8))) return false;
+        }
+        return true;
     }
 
     static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
-        java.util.concurrent.CompletableFuture<Void> settled = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<Void> forced = new java.util.concurrent.CompletableFuture<>();
         server.execute(() -> {
             try {
-                new CombatOracle(server).settleArena();
-                settled.complete(null);
+                new CombatOracle(server).forceArena();
+                forced.complete(null);
             } catch (Throwable t) {
-                settled.completeExceptionally(t);
+                forced.completeExceptionally(t);
             }
         });
-        settled.join();
+        forced.join();
+        try {
+            awaitArena(server);
+        } catch (Exception e) {
+            throw new IOException(e);
+        }
         List<Path> files;
         try (var stream = Files.list(dir)) {
             files = stream.filter(p -> p.toString().endsWith(".txt")).sorted().toList();
