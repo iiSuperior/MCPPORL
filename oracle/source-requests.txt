@@ -2,19 +2,18 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 13: the client's crosshair pick (aim-to-hit fairness check) and how
-# the client sees remote players (position sync and interpolation).
-net.minecraft.client.Minecraft :grep=pick\(|handleKeybinds\(\)|hitResult\s=|runTick|tick\(\)
-net.minecraft.client.renderer.GameRenderer pick
-net.minecraft.world.entity.projectile.ProjectileUtil getHitEntitiesAlong getEntityHitResult
-net.minecraft.world.phys.AABB clip distanceToSqr getDirection inflate contains
-net.minecraft.world.entity.Entity pick getViewVector calculateViewVector getEyePosition getPickRadius isPickable getLookAngle getHeadLookAngle moveOrInterpolateTo getInterpolation
-net.minecraft.world.entity.player.Player getAttackRangeWith isPickable entityInteractionRange
-net.minecraft.world.entity.LivingEntity getAttackRangeWith getInterpolation
-net.minecraft.world.entity.InterpolationHandler :all
-net.minecraft.world.level.BlockGetter clip traverseBlocks
-net.minecraft.client.multiplayer.ClientPacketListener handleMoveEntity handleTeleportEntity handleEntityPositionSync handleAddEntity
-net.minecraft.client.player.RemotePlayer :all
-net.minecraft.world.entity.EntityType :grep=PLAYER\s=|updateInterval
-net.minecraft.server.level.ServerEntity createMovePacket
-net.minecraft.world.entity.PositionMoveRotation :all
+# Batch 14: the rest of the click path (pick, punch packet, miss time).
+net.minecraft.client.player.LocalPlayer raycastHitResult getKnownMovement
+net.minecraft.world.entity.player.Player raycastHitResult getKnownMovement swing
+net.minecraft.world.entity.Entity raycastHitResult canBePickedFromInside getViewYRot getViewXRot getKnownMovement blockInteractionRange
+net.minecraft.world.entity.LivingEntity swing getViewYRot
+net.minecraft.world.entity.projectile.ProjectileUtil getManyEntityHitResult
+net.minecraft.world.level.Level clipIncludingBorder
+net.minecraft.world.phys.shapes.VoxelShape clip clipPoint
+net.minecraft.world.phys.AABB clipPoint ofSize
+net.minecraft.util.Mth lerp frac sign lengthSquared
+net.minecraft.client.multiplayer.MultiPlayerGameMode hasMissTime
+net.minecraft.server.network.ServerGamePacketListenerImpl :grep=Punch|handleAnimate|swingAndResetAttackStrength
+net.minecraft.server.level.ServerPlayer :grep=Punch|swingAndResetAttackStrength|resetAttackStrength
+net.minecraft.world.entity.player.Player :grep=Punch|swingAndResetAttackStrength|resetAttackStrength
+net.minecraft.network.protocol.game.ServerboundPunchPacket :all
