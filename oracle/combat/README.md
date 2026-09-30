@@ -63,6 +63,30 @@ after the hit; "displacement" is B's z-change over that tick.
 | `35_sword_vs_axe_trade` | Netherite sword (8.0) vs stone axe (9.0), same tick, both sprint hits | 8.0 / 9.0 | 0.7 both |
 | `36_wood_sword_combo` | Wooden sword 4.0 per hit: two full-strength hits kill B at 8 health | 4.0 + 4.0 | as standing |
 
+### Hotbar and shields (40-51)
+
+Tokens `slot=N` (a hotbar key, 0-8) and `use` (the use key is down; the first
+such tick is a press); `start` keys `hotbar=a,b,...` (slot 0 is held, `-` for
+an empty slot) and `offhand=`. Traces add `slot`, `using`, `cooldown` (the
+client's), `server.slot/using/useTicks/blocking/cooldown/yHeadRot`,
+`server.mainDamage/offDamage` (durability used) and `view.using` (the other
+player's raised shield as this client sees it).
+
+| Scenario | What it shows | Result |
+|---|---|---|
+| `40_swap_sword` | Wooden to netherite: the slot goes out with the next tick's `gameMode.tick`; the server resets the attack strength | 8.0 |
+| `41_swap_hit_same_tick` | Slot key and click on one tick: `attack()` flushes the slot first, but the attributes (updated in the server tick) are still the sword's | **8.0 with an axe in hand** |
+| `42_shield_raise` | A hit on the 4th use tick lands (the shield blocks after 5); later ones are blocked | 7.0, then blocked |
+| `43_axe_disable` | Diamond axe on a raised shield: blocked, shield disabled for 100 ticks and lowered; the held use key retries every 4 ticks and succeeds when the cooldown ends | shield -10, then 9.0 |
+| `44_axe_break_swap_back` | Wooden axe hit at strength ~0.1 still disables (strength does not matter); swap back, full netherite hit | disabled, then 8.0 |
+| `45_swap_hit_disable` | Swap-hit to the axe: the sword's damage is blocked, the axe's Weapon component disables; reverse swap-hit uses the axe's attributes at low strength | shield -9, disabled, then 1.51 |
+| `46_shield_arc` | 80 degrees from A: blocked; 100 degrees: lands | blocked, then 7.0 |
+| `47_head_yaw_lag` | B turns away on the tick A's hit arrives: blocked (the head yaw updates in the server tick) | blocked, then 7.0 |
+| `48_shield_walk` | Raised shield: input x0.2, no sprint start, a running sprint continues | |
+| `49_block_then_cooldown` | A blocked hit still starts the damage cooldown (lastHurt 0): the follow-up deals its damage but no knockback | blocked, then 2.84 |
+| `50_block_and_swap` | While blocking: clicks eaten, a hotbar swap leaves the off-hand shield up | blocked |
+| `51_use_packets` | Right-click interaction and use-on-block packets change nothing | |
+
 Scenarios can set `health=` on a `start` line; a scenario ends on the tick a
 player dies. Overlapping players' server copies push each other (see 11, 13,
 15, 16 once A catches up with B).
