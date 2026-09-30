@@ -2,7 +2,6 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 25: confirm what else raises needsSync, and the client-side handling around a remote player.
-net.minecraft.world.entity.LivingEntity jumpFromGround
-net.minecraft.world.entity.Entity :grep=needsSync = true|absSnapRotationTo|onInterpolationStart
-net.minecraft.world.entity.Entity absSnapRotationTo onInterpolationStart
+# Batch 30: barrier blocks, for walled training arenas (collision and crosshair picks).
+net.minecraft.world.level.block.BarrierBlock :all
+net.minecraft.world.level.block.state.BlockBehaviour getShape getCollisionShape getVisualShape getInteractionShape
