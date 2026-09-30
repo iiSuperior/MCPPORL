@@ -91,6 +91,9 @@ class PPOConfig:
     shield_lower: tuple[float, float] = (0.01, 0.06)
     shield_never: float = 0.0
     shield_panic: tuple[float, float] = (0.0, 0.0)
+    # Share of duels (the first ones) whose learner gets `hotbar` in reverse
+    # order: e.g. starting with the axe in hand instead of the sword.
+    hotbar_flip: float = 0.0
     # Logit bias of "no key" in heads added to an init checkpoint (4: ~96% at first).
     head_bias: float = 4.0
     # Evaluation opponents (keys of EVAL_OPPONENTS); empty: the standard set.
@@ -216,8 +219,11 @@ def load_policy(ck: dict, obs_size: int, slot_keys: int | None = None, use_key: 
 
 def set_loadouts(env: DuelEnv, learner: np.ndarray, cfg: "PPOConfig") -> None:
     """Give the learner's and the opponents' slots their configured items and restart the duels."""
+    n_flip = int(round(env.n * cfg.hotbar_flip))
     for s in range(2 * env.n):
         hotbar, off = (cfg.hotbar, cfg.offhand) if learner[s] else (cfg.opp_hotbar, cfg.opp_offhand)
+        if learner[s] and s // 2 < n_flip:
+            hotbar = tuple(reversed(hotbar))
         env.set_loadout(s, hotbar if (hotbar or off) else None, off)
     for i in range(env.n):
         env.reset_duel(i)
