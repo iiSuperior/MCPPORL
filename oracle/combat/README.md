@@ -52,6 +52,13 @@ after the hit; "displacement" is B's z-change over that tick.
 | `24_look_away` | Click facing away: whiff; release, flick back, click: hits, but the whiff's punch halved the cooldown | 0.4 | as standing |
 | `25_aim_edge` | 8 degrees off-centre misses by a centimetre, 5 degrees hits (one tick after the whiff's punch) | 0.27 | as standing |
 | `26_ground_click` | Clicking the ground punches too: the next hit is at half strength | 0.4 | as standing |
+| `27_kill` | Sprint hit on 1 health: the episode ends on the killing tick, knockback included | 1.0 | 0.7 |
+| `28_trade_kill` | Both on 1 health, same-tick clicks: A's packets come first, B dies and B's hit is ignored | 1.0 (A survives) | 0.7 |
+| `29_crit_kill` | A crit on exactly 1.5 health: health reaches 0.0 | 1.5 | as standing |
+
+Scenarios can set `health=` on a `start` line; a scenario ends on the tick a
+player dies. Overlapping players' server copies push each other (see 11, 13,
+15, 16 once A catches up with B).
 
 Every combat trace also records each tick's crosshair pick (type and hit
 location) and `missTime`. Natural health regeneration is off in the oracle

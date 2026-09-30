@@ -99,9 +99,19 @@ What the server copy actually does (verified against the traces):
   positions (`doCheckFallDamage`).
 - Changes to the server's sprint flag are echoed to the player's own client
   as entity data plus the movement-speed attribute; the client applies both.
-- Server copies do not push each other. A real client is pushed locally by
-  the remote player; neither the oracle nor the simulator models that yet
-  (the simulator counts such ticks, `Duel::clientPushTicks`).
+- Overlapping server copies push each other at the end of each shadow tick
+  (`LivingEntity.pushEntities`), which feeds the velocity knockback uses. A
+  real client is also pushed locally by the remote player; neither the oracle
+  nor the simulator models that yet (the simulator counts such ticks,
+  `Duel::clientPushTicks`).
+- A death ends the episode on the killing tick. `ServerPlayer.die` marks the
+  connection unloaded, so the dead player's remaining packets that tick
+  (attack, sprint, movement) are ignored: in a same-tick trade, the player
+  whose packets the server handles first wins.
+- Knockback between players standing on the same spot takes a random
+  direction from the victim's own `RandomSource`, whose state cannot be
+  reproduced. The simulator draws from the same distribution with a seeded
+  stand-in and counts each draw (`Duel::nonParityEvents`).
 - The oracle disables natural health regeneration: it is driven by hunger,
   which is not in the known domain yet.
 
