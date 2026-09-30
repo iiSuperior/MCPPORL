@@ -51,6 +51,7 @@ def _load() -> ctypes.CDLL:
     lib.mcp_env_create.argtypes = [ctypes.c_int, ctypes.c_ulonglong, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint,
                                    ctypes.c_int, _F, ctypes.c_float, ctypes.c_double, ctypes.c_double]
     lib.mcp_env_destroy.argtypes = [ctypes.c_void_p]
+    lib.mcp_env_set_reward.argtypes = [ctypes.c_void_p, _F]
     lib.mcp_env_observe.argtypes = [ctypes.c_void_p, _F]
     lib.mcp_env_step.argtypes = [ctypes.c_void_p, _F, _F, _F, _U8, _F]
     lib.mcp_env_scripted.argtypes = [ctypes.c_void_p, _U8, ctypes.c_int, ctypes.c_float, ctypes.c_float, _F]
@@ -101,6 +102,12 @@ class DuelEnv:
         self._rew = np.zeros(2 * n, np.float32)
         self._done = np.zeros(n, np.uint8)
         self._stats = np.zeros((n, self.stats_size), np.float32)
+
+    def set_reward(self, reward: RewardConfig, aim_dense: float = 0.0, reach_dense: float = 0.0) -> None:
+        """Change the reward, including the annealed dense training aids."""
+        r = np.array([reward.damage_dealt, reward.damage_taken, reward.win, reward.loss, reward.reach_shaping,
+                      reward.gamma, reward.aim_shaping, aim_dense, reach_dense], dtype=np.float32)
+        lib().mcp_env_set_reward(self._h, _p(r, _F))
 
     def close(self) -> None:
         if self._h:

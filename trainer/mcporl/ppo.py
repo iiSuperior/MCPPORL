@@ -51,6 +51,12 @@ class PPOConfig:
     eval_every: int = 10
     eval_episodes: int = 256
     reward: RewardConfig = field(default_factory=RewardConfig)
+    # Dense training aids (reward.hpp): per tick, x the aim potential and while
+    # in hit range. They make the first hits discoverable but can be farmed,
+    # so they fall linearly to 0 by `anneal` x updates (docs/REWARD.md).
+    aim_dense: float = 0.01
+    reach_dense: float = 0.02
+    anneal: float = 0.6
 
 
 class RunningNorm:
@@ -236,6 +242,8 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     samples = 0
     t_start = time.time()
     for update in range(1, cfg.updates + 1):
+        aid = max(0.0, 1.0 - (update - 1) / max(cfg.anneal * cfg.updates, 1.0))
+        env.set_reward(cfg.reward, cfg.aim_dense * aid, cfg.reach_dense * aid)
         buf_obs = np.zeros((T, S, env.obs_size), np.float32)
         buf_c = np.zeros((T, S, len(CAT_SIZES)), np.int64)
         buf_t = np.zeros((T, S, 2), np.float32)
@@ -307,7 +315,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
                "train_damage": train_eps["dmg"] / max(train_eps["n"], 1),
                "policy_loss": float(pg.detach()), "value_loss": float(vf.detach()),
                "entropy": float(ent.mean().detach()),
-               "turn_std_deg": (policy.log_std.exp() * TURN_SCALE).tolist()}
+               "turn_std_deg": (policy.log_std.exp() * TURN_SCALE).tolist(), "aid": aid}
         if update % cfg.eval_every == 0 or update == cfg.updates:
             policy.eval()
             row["eval"] = [evaluate(policy, norm, cfg, o, seed=1000 + update)

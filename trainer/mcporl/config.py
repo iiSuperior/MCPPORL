@@ -72,7 +72,7 @@ class RewardConfig:
     # policy is optimal.
     gamma: float = 0.99
     # Potential-based aim shaping: pays for turning the crosshair onto the
-    # opponent as the client sees it (1 on target, 0 at 90 degrees off).
+    # opponent as the client sees it (1 on target, 0 at 180 degrees off).
     aim_shaping: float = 0.2
 
     def __post_init__(self) -> None:

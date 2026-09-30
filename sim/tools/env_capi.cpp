@@ -31,11 +31,16 @@ void* mcp_env_create(int n, unsigned long long seed, const char* sinTablePath, i
     c.maxTicks = maxTicks;
     c.weaponMask = weaponMask;
     c.sameWeapon = sameWeapon != 0;
-    c.reward = RewardWeights{reward[0], reward[1], reward[2], reward[3], reward[4], reward[5], reward[6]};
+    c.reward = RewardWeights{reward[0], reward[1], reward[2], reward[3], reward[4], reward[5], reward[6], 0.0F, 0.0F};
     c.caps.maxTurnDegPerTick = maxTurnDegPerTick;
     c.minStartDist = minStartDist;
     c.maxStartDist = maxStartDist;
     return new BatchEnv(n, seed, std::move(table), c);
+}
+
+// Change the reward weights (same order as create, then aim_dense, reach_dense).
+void mcp_env_set_reward(void* h, const float* r) {
+    static_cast<BatchEnv*>(h)->cfg.reward = RewardWeights{r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]};
 }
 
 void mcp_env_destroy(void* h) { delete static_cast<BatchEnv*>(h); }

@@ -11,7 +11,12 @@ r = damage_dealt * (health the opponent lost)
   - damage_taken * (health I lost)
   + win  on the tick the opponent dies,  - loss  on the tick I die
   + reach_shaping * (gamma * phi(s') - phi(s))
+  + aim_shaping * (gamma * aim(s') - aim(s))
+  + training aids, annealed to 0: aim_dense * aim(s') + reach_dense * [in hit range]
 ```
+
+`aim` is 1 with the crosshair on the chest of the opponent as the client
+sees it, falling linearly to 0 at 180 degrees off.
 
 Defaults: 1, 1, 10, 10, 0.1, gamma 0.99.
 
@@ -73,6 +78,25 @@ removes the exploit. The reach term is `gamma * phi(s') - phi(s)`:
 
 This holds only if `gamma` in `RewardConfig` is the discount the learner
 uses; the config keeps them in one place for that reason.
+
+## What shaping can and cannot do (measured)
+
+Potential-based terms leave the optimal policy unchanged, and they also
+leave the advantages unchanged: the one-off gain for stepping onto the
+target is exactly paid back by the small per-tick `(gamma - 1) * phi` for
+staying there. With a learned critic they give almost no learning signal.
+An aim-only probe (standing dummies, reward = potential-based aim term only)
+barely moved its aim error in 330k samples: under a reward made only of
+shaping, every policy is equally good.
+
+So exploration gets **dense training aids**, the user's original "time in
+hit range" idea plus the same for aim: per tick, `aim_dense` x the aim
+potential and `reach_dense` while a perfectly aimed click would land. The
+same probe with `aim_dense` alone took aim error from ~125 to ~8 degrees in
+40 updates. These aids *can* be farmed, so the trainer anneals them linearly
+to 0 by 60% of training (`PPOConfig.anneal`); from then on the policy
+optimises only damage, wins and the potential-based terms, which cannot be
+farmed.
 
 ## Tuning notes
 

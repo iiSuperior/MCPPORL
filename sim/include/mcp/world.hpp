@@ -36,11 +36,11 @@ struct FlatWorld {
 // human players and full cubes to collision; the oracle builds the same ring
 // (CombatOracle.forceArena).
 //
-// When block placing arrives (Phase 3: buckets, cobwebs, blocks), the ring
-// must stay the arena's edge: no placement on or above a wall column, no
-// breaking it, and no building up past its top (docs/ARCHITECTURE.md,
-// "Walled arena"). Raise wallHeight to the build limit or add a height
-// check then, or bots will learn to climb out over their own blocks.
+// When block placing arrives (Phase 3: buckets, cobwebs, blocks), players
+// must not be able to build out: towering is normal PvP, so rather than
+// forbidding building near the ring, raise the walls to the build height
+// limit (the world ceiling then closes the arena) or add roofed variants of
+// varying heights and sizes (docs/ARCHITECTURE.md, "Walled arena").
 struct ArenaWorld {
     int32_t surfaceY = -60;
     int32_t radius = 24;

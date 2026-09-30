@@ -162,10 +162,11 @@ human sees walls. Earlier, open arenas taught policies to run away to force
 a draw.
 
 **Open item for block placement (Phase 3):** once players can place blocks
-(buckets, cobwebs, building), the ring must stay the edge: no placing on or
-above a wall column, no breaking it, and no building up past its top.
-Either extend the walls to the build limit or enforce a placement height
-check, or bots will learn to climb out over their own blocks.
+(buckets, cobwebs, building), bots must not be able to build out over the
+ring. Towering is ordinary PvP, so building near the walls stays allowed;
+instead the walls go up to the build height limit (the world ceiling closes
+the arena, no roof needed), and roofed arenas of varying heights and sizes
+become test variants. The barriers themselves stay unbreakable.
 
 ### Floating-point rules (non-negotiable for bit-exactness)
 

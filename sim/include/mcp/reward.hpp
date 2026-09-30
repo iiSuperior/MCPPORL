@@ -37,6 +37,12 @@ struct RewardWeights {
     float reachShaping = 0.1F;
     float gamma = 0.99F;
     float aimShaping = 0.2F;
+    // Dense training aids, paid every tick: `aimDense` x the aim potential and
+    // `reachDense` while a perfectly aimed click would land ("time in hit
+    // range"). Unlike the potential-based terms these change what is optimal
+    // and can be farmed, so the trainer anneals them to 0 (docs/REWARD.md).
+    float aimDense = 0.0F;
+    float reachDense = 0.0F;
 };
 
 // Reach as each client would resolve a click at the start of the next tick:
@@ -55,9 +61,10 @@ MCP_HD inline reach::ReachState reachOf(const Duel& d, int32_t i) {
 MCP_HD inline float reachPotential(const reach::ReachState& r) { return static_cast<float>(r.advantage()); }
 
 // Aim potential: 1 when the crosshair points at the chest of the opponent as
-// this client sees it, falling linearly to 0 at 90 degrees off. Also
-// potential-based, so it teaches pointing at the opponent early without
-// changing which policy is optimal.
+// this client sees it, falling linearly to 0 at 180 degrees off (it must slope
+// everywhere: flat beyond 90 degrees, a random early policy that has turned
+// away gets no signal which way to turn back). Also potential-based, so it
+// teaches pointing at the opponent without changing which policy is optimal.
 inline float aimPotential(const Duel& d, int32_t i) {
     const DuelPlayer& me = d.p[i];
     double eye = static_cast<double>(CombatConstants::kEyeHeightStanding);
@@ -67,7 +74,7 @@ inline float aimPotential(const Duel& d, int32_t i) {
     float pitch = static_cast<float>(-std::atan2(dy, std::sqrt(dx * dx + dz * dz)) * 57.29577951308232);
     float ey = duel::wrapDegrees(yaw - me.client.yRot), ep = pitch - me.client.xRot;
     float err = std::sqrt(ey * ey + ep * ep);
-    return 1.0F - (err < 90.0F ? err : 90.0F) / 90.0F;
+    return 1.0F - (err < 180.0F ? err : 180.0F) / 180.0F;
 }
 
 // Remembers the previous state's health and potentials between ticks.
@@ -106,6 +113,10 @@ struct DuelRewards {
             float nextAim = done ? 0.0F : aimPotential(d, i);
             r += w.aimShaping * (w.gamma * nextAim - aim[i]);
             aim[i] = nextAim;
+            if (!done) {
+                r += w.aimDense * nextAim;
+                r += w.reachDense * (reachOf(d, i).canHit() ? 1.0F : 0.0F);
+            }
             out[i] = r;
         }
     }
