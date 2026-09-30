@@ -5,7 +5,8 @@
     obs, rew, done, stats = env.step(actions)  # actions [2n, ACT] float32
 
 Actions per slot: forward/back (-1, 0, 1), left/right (-1, 0, 1), jump,
-sprint, click (0/1), then the turn this tick in degrees (yaw, pitch).
+sprint, click (0/1), the turn this tick in degrees (yaw, pitch), a hotbar key
+(-1 none, else 0-8) and the use key (0/1, held while 1).
 done[i]: 0 running, 1 a death ended the episode, 2 truncated (time limit or
 out of the arena). stats[i] is filled for duels that ended this step.
 """
@@ -24,10 +25,11 @@ SIN_TABLE = REPO / "sim" / "data" / "sin_table.bin"
 
 WEAPONS = ["hand", "wooden_sword", "stone_sword", "copper_sword", "iron_sword", "golden_sword", "diamond_sword",
            "netherite_sword", "wooden_axe", "stone_axe", "copper_axe", "iron_axe", "golden_axe", "diamond_axe",
-           "netherite_axe"]
+           "netherite_axe", "shield"]
 
 SLOT_STATS = ["clicks", "attacks", "hits", "damage_dealt", "damage_taken", "aim_error_sum", "aim_ticks",
-              "advantage_ticks", "disadvantage_ticks"]
+              "advantage_ticks", "disadvantage_ticks", "swaps", "axe_swaps_raised", "axe_swaps_lowered", "disables",
+              "blocked_hits", "sword_hits_lowered", "axe_attacks", "swap_backs", "best_ticks"]
 
 CHEAT_SNAP_AIM, CHEAT_TRUE_SIGHT, CHEAT_RANGE_HIT = 1, 2, 4
 
@@ -60,6 +62,9 @@ def _load() -> ctypes.CDLL:
     _I32 = ctypes.POINTER(ctypes.c_int32)
     lib.mcp_env_scripted_each.argtypes = [ctypes.c_void_p, _U8, _I32, _F, _F, _F]
     lib.mcp_env_tactician_each.argtypes = [ctypes.c_void_p, _U8, _F, _F, ctypes.POINTER(ctypes.c_uint32), _U8, _F]
+    lib.mcp_env_shielder_each.argtypes = [ctypes.c_void_p, _U8, _F, _F, _F, _F]
+    lib.mcp_env_set_loadout.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+    lib.mcp_env_reset_duel.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.mcp_env_record.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.mcp_env_record_state.argtypes = [ctypes.c_void_p, ctypes.c_int]
     lib.mcp_env_record_nonparity.argtypes = [ctypes.c_void_p, ctypes.c_int]
@@ -163,6 +168,28 @@ class DuelEnv:
         lib().mcp_env_tactician_each(self._h, _p(m, _U8), _p(nz, _F), _p(tr, _F),
                                      ch.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)), _p(cr, _U8), _p(out, _F))
         return out
+
+    def shielder_each(self, mask: np.ndarray, noise_deg: np.ndarray, turn_deg: np.ndarray, lower_rate: np.ndarray,
+                      out: np.ndarray) -> np.ndarray:
+        """Shield users (raise the off-hand shield, lower it at random, swing while it is down)."""
+        m = np.ascontiguousarray(mask, dtype=np.uint8)
+        nz = np.ascontiguousarray(noise_deg, dtype=np.float32)
+        tr = np.ascontiguousarray(turn_deg, dtype=np.float32)
+        lo = np.ascontiguousarray(lower_rate, dtype=np.float32)
+        lib().mcp_env_shielder_each(self._h, _p(m, _U8), _p(nz, _F), _p(tr, _F), _p(lo, _F), _p(out, _F))
+        return out
+
+    def set_loadout(self, slot: int, hotbar: tuple[str, ...] | None, offhand: str = "") -> None:
+        """Slot `slot` (2i+k) starts every episode with this hotbar (slot 0 selected) and off hand;
+        None: back to the weapon drawn from `weapons`. Applies from the duel's next reset."""
+        if hotbar is None:
+            lib().mcp_env_set_loadout(self._h, slot, None, 0)
+            return
+        h = (ctypes.c_int * 9)(*[WEAPONS.index(w) if w and w != "-" else 0 for w in (list(hotbar) + [""] * 9)[:9]])
+        lib().mcp_env_set_loadout(self._h, slot, h, WEAPONS.index(offhand) if offhand else 0)
+
+    def reset_duel(self, i: int) -> None:
+        lib().mcp_env_reset_duel(self._h, i)
 
     def record(self, i: int) -> None:
         lib().mcp_env_record(self._h, i)

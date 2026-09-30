@@ -22,7 +22,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mcporl.env import REPO, SIN_TABLE, DuelEnv, _find_library  # noqa: E402
-from mcporl.ppo import Policy, RunningNorm, to_env_actions  # noqa: E402
+from mcporl.ppo import PPOConfig, load_policy, set_loadouts  # noqa: E402
 
 p = argparse.ArgumentParser()
 p.add_argument("checkpoint")
@@ -37,26 +37,26 @@ a = p.parse_args()
 ck = torch.load(a.checkpoint, weights_only=False)
 cfg = ck["config"]
 env = DuelEnv(a.count, seed=a.seed, max_ticks=cfg["max_ticks"], weapons=tuple(cfg["weapons"]))
-policy = Policy(env.obs_size, cfg["hidden"])
-policy.load_state_dict(ck["policy"])
+policy, norm = load_policy(ck, env.obs_size)
 policy.eval()
-norm = RunningNorm(env.obs_size)
-norm.mean, norm.var = np.array(ck["norm"]["mean"]), np.array(ck["norm"]["var"])
 
 n = a.count
 vs_bot = np.arange(n) < n // 2
 learner = np.ones(2 * n, bool)
 for i in np.nonzero(vs_bot)[0]:
     learner[2 * i + 1 - (i % 2)] = False  # the bot's slot
+items = PPOConfig(hotbar=tuple(cfg.get("hotbar", ())), offhand=cfg.get("offhand", ""),
+                  opp_hotbar=tuple(cfg.get("opp_hotbar", ())), opp_offhand=cfg.get("opp_offhand", ""))
+set_loadouts(env, learner, items)
 for i in range(n):
     env.record(i)
 obs = env.observe()
-actions = np.zeros((2 * n, 7), np.float32)
+actions = np.zeros((2 * n, env.action_size), np.float32)
 outcome = {}
 while any(env.record_state(i) == 1 for i in range(n)):
     with torch.no_grad():
         c, t, _, _ = policy.act(torch.from_numpy(norm(obs)), deterministic=False)
-    actions[:] = to_env_actions(c.numpy(), t.numpy())
+    actions[:] = policy.env_actions(c.numpy(), t.numpy())
     mask = (~learner).astype(np.uint8)
     if a.opponent == "aim":
         env.scripted(mask, 1, 1.5, 45.0, actions)

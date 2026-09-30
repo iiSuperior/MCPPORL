@@ -5,9 +5,9 @@ slots are the learner) and scripted opponents (an aim bot of random skill, or
 a dummy), with the learner alternating between slot 0 and slot 1 so neither
 side of the server's packet order is favoured.
 
-The action is factored: categorical heads for the keys and the click, and a
-Gaussian for the turn (degrees per tick, the fairness cap still applies in
-the simulator).
+The action is factored: categorical heads for the keys and the click
+(optionally a hotbar-key head and a use-key head), and a Gaussian for the
+turn (degrees per tick, the fairness cap still applies in the simulator).
 """
 from __future__ import annotations
 
@@ -21,10 +21,15 @@ import torch
 import torch.nn as nn
 
 from .config import RewardConfig
-from .env import CHEAT_RANGE_HIT, CHEAT_SNAP_AIM, CHEAT_TRUE_SIGHT, DuelEnv, slot_stats
+from .env import CHEAT_RANGE_HIT, CHEAT_SNAP_AIM, CHEAT_TRUE_SIGHT, SLOT_STATS, DuelEnv, slot_stats
 
-# Heads: forward/back, left/right (3 each: -1, 0, 1), jump, sprint, click (2 each).
+# Heads: forward/back, left/right (3 each: -1, 0, 1), jump, sprint, click (2 each);
+# then, if enabled, a hotbar key (none, slot 0, ..., slot k-1) and the use key (2).
 CAT_SIZES = (3, 3, 2, 2, 2)
+
+
+def cat_sizes(slot_keys: int = 0, use_key: bool = False) -> tuple[int, ...]:
+    return CAT_SIZES + ((1 + slot_keys,) if slot_keys else ()) + ((2,) if use_key else ())
 TURN_SCALE = 45.0  # the turn mean saturates at +-45 degrees per tick
 
 
@@ -69,6 +74,21 @@ class PPOConfig:
     league_every: int = 20
     tactician: float = 0.0
     expert: float = 0.0
+    # Items (weapons.hpp names): the learner's hotbar (slot 0 selected) and off
+    # hand, and the opponents'; empty: one weapon drawn from `weapons`.
+    hotbar: tuple[str, ...] = ()
+    offhand: str = ""
+    opp_hotbar: tuple[str, ...] = ()
+    opp_offhand: str = ""
+    # Extra action heads: hotbar keys for slots 0..slot_keys-1, and the use key.
+    slot_keys: int = 0
+    use_key: bool = False
+    # Share of scripted duels against the shield user, and its range of
+    # per-tick chances to lower the shield voluntarily.
+    shielder: float = 0.0
+    shield_lower: tuple[float, float] = (0.01, 0.06)
+    # Evaluation opponents (keys of EVAL_OPPONENTS); empty: the standard set.
+    eval_opponents: tuple[str, ...] = ()
 
 
 class RunningNorm:
@@ -97,17 +117,23 @@ def mlp(i: int, h: int, o: int) -> nn.Sequential:
 
 
 class Policy(nn.Module):
-    def __init__(self, obs_size: int, hidden: int):
+    def __init__(self, obs_size: int, hidden: int, slot_keys: int = 0, use_key: bool = False):
         super().__init__()
-        self.actor = mlp(obs_size, hidden, sum(CAT_SIZES) + 2)
+        self.slot_keys, self.use_key = slot_keys, use_key
+        self.cat_sizes = cat_sizes(slot_keys, use_key)
+        self.actor = mlp(obs_size, hidden, sum(self.cat_sizes) + 2)
         self.critic = mlp(obs_size, hidden, 1)
         self.log_std = nn.Parameter(torch.full((2,), float(np.log(8.0 / TURN_SCALE))))
 
+    def env_actions(self, c: np.ndarray, t: np.ndarray) -> np.ndarray:
+        return to_env_actions(c, t, self.slot_keys, self.use_key)
+
     def dists(self, obs: torch.Tensor):
         out = self.actor(obs)
-        logits = torch.split(out[:, :sum(CAT_SIZES)], CAT_SIZES, dim=1)
+        n = sum(self.cat_sizes)
+        logits = torch.split(out[:, :n], self.cat_sizes, dim=1)
         cats = [torch.distributions.Categorical(logits=l) for l in logits]
-        mean = torch.tanh(out[:, sum(CAT_SIZES):])
+        mean = torch.tanh(out[:, n:])
         turn = torch.distributions.Normal(mean, self.log_std.exp().expand_as(mean))
         return cats, turn
 
@@ -129,13 +155,66 @@ class Policy(nn.Module):
         return logp, ent, self.critic(obs).squeeze(1)
 
 
-def to_env_actions(c: np.ndarray, t: np.ndarray) -> np.ndarray:
-    a = np.zeros((c.shape[0], 7), np.float32)
+ACTION_SIZE = 9
+
+
+def to_env_actions(c: np.ndarray, t: np.ndarray, slot_keys: int = 0, use_key: bool = False) -> np.ndarray:
+    a = np.zeros((c.shape[0], ACTION_SIZE), np.float32)
     a[:, 0] = c[:, 0] - 1
     a[:, 1] = c[:, 1] - 1
     a[:, 2:5] = c[:, 2:5]
     a[:, 5:7] = np.clip(t, -4.0, 4.0) * TURN_SCALE
+    a[:, 7] = c[:, 5] - 1 if slot_keys else -1  # head value 0: no key
+    if use_key:
+        a[:, 8] = c[:, -1]
     return a
+
+
+def load_policy(ck: dict, obs_size: int, slot_keys: int | None = None, use_key: bool | None = None,
+                none_bias: float = 4.0) -> tuple["Policy", "RunningNorm"]:
+    """A checkpoint's policy and observation statistics, grown to `obs_size`
+    observations and the requested heads if it has fewer: new inputs get zero
+    weights (mean 0, variance 1), new heads zero weights with a bias towards
+    pressing nothing, so the grown policy acts exactly as before at first."""
+    cfg = ck["config"]
+    old_slots, old_use = int(cfg.get("slot_keys", 0)), bool(cfg.get("use_key", False))
+    slot_keys = old_slots if slot_keys is None else slot_keys
+    use_key = old_use if use_key is None else use_key
+    policy = Policy(obs_size, cfg["hidden"], slot_keys, use_key)
+    state = {k: v.clone() for k, v in ck["policy"].items()}
+    old_obs = state["actor.0.weight"].shape[1]
+    for net in ("actor", "critic"):
+        w = state[f"{net}.0.weight"]
+        state[f"{net}.0.weight"] = torch.cat([w, torch.zeros(w.shape[0], obs_size - old_obs)], 1)
+    old_cats, new_cats = cat_sizes(old_slots, old_use), policy.cat_sizes
+    if new_cats != old_cats:
+        if old_cats != CAT_SIZES:
+            raise ValueError(f"can only add heads to a policy with the base heads, not {old_cats}")
+        w, b = state["actor.4.weight"], state["actor.4.bias"]
+        base = sum(CAT_SIZES)
+        extra_w, extra_b = [], []
+        for size in new_cats[len(CAT_SIZES):]:
+            extra_w.append(torch.zeros(size, w.shape[1]))
+            nb = torch.zeros(size)
+            nb[0] = none_bias  # no hotbar key / use key up
+            extra_b.append(nb)
+        state["actor.4.weight"] = torch.cat([w[:base], *extra_w, w[base:]])
+        state["actor.4.bias"] = torch.cat([b[:base], *extra_b, b[base:]])
+    policy.load_state_dict(state)
+    norm = RunningNorm(obs_size)
+    m, v = np.array(ck["norm"]["mean"]), np.array(ck["norm"]["var"])
+    norm.mean[:len(m)], norm.var[:len(v)] = m, v
+    norm.count = float(ck["norm"]["count"])
+    return policy, norm
+
+
+def set_loadouts(env: DuelEnv, learner: np.ndarray, cfg: "PPOConfig") -> None:
+    """Give the learner's and the opponents' slots their configured items and restart the duels."""
+    for s in range(2 * env.n):
+        hotbar, off = (cfg.hotbar, cfg.offhand) if learner[s] else (cfg.opp_hotbar, cfg.opp_offhand)
+        env.set_loadout(s, hotbar if (hotbar or off) else None, off)
+    for i in range(env.n):
+        env.reset_duel(i)
 
 
 class Opponents:
@@ -146,7 +225,7 @@ class Opponents:
     snapshot, or a scripted opponent (tactician, expert panel, aim bot,
     dummy) with random skill."""
 
-    LEAGUE, DUMMY, AIM, TACT, EXPERT = 0, 1, 2, 3, 4
+    LEAGUE, DUMMY, AIM, TACT, EXPERT, SHIELD = 0, 1, 2, 3, 4, 5
 
     def __init__(self, n: int, cfg: PPOConfig, rng: np.random.Generator):
         self.n = n
@@ -156,6 +235,7 @@ class Opponents:
         self.turn = np.zeros(2 * n, np.float32)
         self.cheats = np.zeros(2 * n, np.uint32)
         self.crits = np.zeros(2 * n, np.uint8)
+        self.lower = np.zeros(2 * n, np.float32)
         n_self = int(round(n * cfg.self_play))
         self.self_play = np.arange(n) < n_self
         for i in range(n):
@@ -183,12 +263,15 @@ class Opponents:
                 self.who[i] = self.EXPERT
             elif r < c.tactician + c.expert + c.dummy:
                 self.who[i] = self.DUMMY
+            elif r < c.tactician + c.expert + c.dummy + c.shielder:
+                self.who[i] = self.SHIELD
             else:
                 self.who[i] = self.AIM
         s = slice(2 * i, 2 * i + 2)
         self.noise[s] = self.rng.uniform(0.5, 12.0) if self.who[i] != self.EXPERT else 0.0
         self.turn[s] = self.rng.uniform(6.0, 60.0)
         self.crits[s] = self.rng.random() < 0.5
+        self.lower[s] = self.rng.uniform(*c.shield_lower)
         cheats = 0
         if self.who[i] == self.EXPERT:
             while cheats == 0:  # at least one cheat, any combination
@@ -205,16 +288,20 @@ class Opponents:
         tact = other & ((who == self.TACT) | (who == self.EXPERT))
         if tact.any():
             env.tactician_each(tact, self.noise, self.turn, self.cheats, self.crits, actions)
+        shield = other & (who == self.SHIELD)
+        if shield.any():
+            env.shielder_each(shield, self.noise, self.turn, self.lower, actions)
         past = other & (who == self.LEAGUE)
         if past.any():
             if league is None:
                 raise RuntimeError("league opponents need a league policy")
             with torch.no_grad():
                 c, t, _, _ = league.act(torch.from_numpy(obs_norm[past]))
-            actions[past] = to_env_actions(c.numpy(), t.numpy())
+            actions[past] = league.env_actions(c.numpy(), t.numpy())
 
 
-# Evaluation opponents: (kind, noise, turn, cheats, crits); kind "aim", "dummy" or "tact".
+# Evaluation opponents: (kind, noise, turn, cheats, crits); kind "aim", "dummy" or "tact";
+# kind "shield": (kind, noise, turn, chance per tick to lower the shield, 0).
 # "expert" cheats (opponent only): report it apart from the fair ones.
 EVAL_OPPONENTS = {
     "dummy": ("dummy", 0.0, 30.0, 0, 0),
@@ -224,7 +311,11 @@ EVAL_OPPONENTS = {
     "tactician": ("tact", 1.5, 45.0, 0, 0),
     "tactician_crits": ("tact", 1.5, 45.0, 0, 1),
     "expert": ("tact", 0.0, 45.0, CHEAT_SNAP_AIM | CHEAT_TRUE_SIGHT | CHEAT_RANGE_HIT, 0),
+    "shielder": ("shield", 1.5, 45.0, 0.03, 0),
+    "shielder_stubborn": ("shield", 1.5, 45.0, 0.005, 0),
+    "shielder_open": ("shield", 1.5, 45.0, 0.2, 0),
 }
+STANDARD_EVAL = ("dummy", "bot_easy", "bot_medium", "bot_hard", "tactician", "tactician_crits", "expert")
 
 
 def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, seed: int,
@@ -236,20 +327,20 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
     env = DuelEnv(n, seed=seed, max_ticks=cfg.max_ticks, weapons=cfg.weapons, reward=cfg.reward)
     learner = np.zeros(2 * n, bool)
     learner[np.arange(n) * 2 + (np.arange(n) % 2)] = True
+    set_loadouts(env, learner, cfg)
     obs = env.observe()
-    agg = {"episodes": 0, "wins": 0, "losses": 0, "draws": 0, "clicks": 0.0, "attacks": 0.0, "hits": 0.0,
-           "damage_dealt": 0.0, "damage_taken": 0.0, "aim_error_sum": 0.0, "aim_ticks": 0.0,
-           "advantage_ticks": 0.0, "disadvantage_ticks": 0.0, "ticks": 0.0}
-    actions = np.zeros((2 * n, 7), np.float32)
+    agg = {"episodes": 0, "wins": 0, "losses": 0, "draws": 0, "ticks": 0.0}
+    agg.update({k: 0.0 for k in SLOT_STATS})
+    actions = np.zeros((2 * n, env.action_size), np.float32)
     finished = np.zeros(n, bool)
     while not finished.all():
         with torch.no_grad():
             o = torch.from_numpy(norm(obs))
             c, t, _, _ = policy.act(o, deterministic=True)
-            a_learn = to_env_actions(c.numpy(), t.numpy())
+            a_learn = policy.env_actions(c.numpy(), t.numpy())
             if opponent == "frozen":
                 c2, t2, _, _ = frozen.act(o, deterministic=True)
-                a_opp = to_env_actions(c2.numpy(), t2.numpy())
+                a_opp = frozen.env_actions(c2.numpy(), t2.numpy())
         actions[learner] = a_learn[learner]
         if opponent == "frozen":
             actions[~learner] = a_opp[~learner]
@@ -259,6 +350,9 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
             if kind == "tact":
                 env.tactician_each(mask, np.full(2 * n, noise, np.float32), np.full(2 * n, turn, np.float32),
                                    np.full(2 * n, cheats, np.uint32), np.full(2 * n, crits, np.uint8), actions)
+            elif kind == "shield":
+                env.shielder_each(mask, np.full(2 * n, noise, np.float32), np.full(2 * n, turn, np.float32),
+                                  np.full(2 * n, cheats, np.float32), actions)
             else:
                 env.scripted(mask, 0 if kind == "dummy" else 1, noise, turn, actions)
         obs, _, done, stats = env.step(actions)
@@ -286,6 +380,13 @@ def evaluate(policy: Policy, norm: RunningNorm, cfg: PPOConfig, opponent: str, s
         "advantage_share": agg["advantage_ticks"] / max(agg["aim_ticks"], 1.0),
         "disadvantage_share": agg["disadvantage_ticks"] / max(agg["aim_ticks"], 1.0),
         "episode_ticks": agg["ticks"] / e,
+        # Hotbar and shield play, per episode (best_share: of ticks, holding the
+        # hotbar's highest-damage item).
+        "swaps": agg["swaps"] / e, "axe_swaps_raised": agg["axe_swaps_raised"] / e,
+        "axe_swaps_lowered": agg["axe_swaps_lowered"] / e, "disables": agg["disables"] / e,
+        "blocked_hits": agg["blocked_hits"] / e, "sword_hits_lowered": agg["sword_hits_lowered"] / e,
+        "axe_attacks": agg["axe_attacks"] / e, "swap_backs": agg["swap_backs"] / e,
+        "best_share": agg["best_ticks"] / max(agg["ticks"], 1.0),
     }
 
 
@@ -297,17 +398,16 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     env = DuelEnv(cfg.n_duels, seed=cfg.seed, max_ticks=cfg.max_ticks, weapons=cfg.weapons, reward=cfg.reward,
                   start_dist=cfg.start_dist)
     opp = Opponents(cfg.n_duels, cfg, rng)
-    policy = Policy(env.obs_size, cfg.hidden)
-    optim = torch.optim.Adam(policy.parameters(), lr=cfg.lr, eps=1e-5)
+    set_loadouts(env, opp.learner, cfg)
+    policy = Policy(env.obs_size, cfg.hidden, cfg.slot_keys, cfg.use_key)
     norm = RunningNorm(env.obs_size)
     league_pool: list[dict] = []
     if cfg.init_checkpoint:
         ck = torch.load(cfg.init_checkpoint, weights_only=False)
-        policy.load_state_dict(ck["policy"])
-        norm.mean, norm.var = np.array(ck["norm"]["mean"]), np.array(ck["norm"]["var"])
-        norm.count = float(ck["norm"]["count"])
+        policy, norm = load_policy(ck, env.obs_size, cfg.slot_keys, cfg.use_key)
         league_pool.append({k: v.clone() for k, v in policy.state_dict().items()})
-    league_net = Policy(env.obs_size, cfg.hidden)
+    optim = torch.optim.Adam(policy.parameters(), lr=cfg.lr, eps=1e-5)
+    league_net = Policy(env.obs_size, cfg.hidden, cfg.slot_keys, cfg.use_key)
     league_net.eval()
     gamma = cfg.reward.gamma
     (out_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=1, default=str))
@@ -317,7 +417,8 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     obs = env.observe()
     norm.update(obs)
     S, T = 2 * cfg.n_duels, cfg.rollout
-    actions = np.zeros((S, 7), np.float32)
+    actions = np.zeros((S, env.action_size), np.float32)
+    n_cat = len(policy.cat_sizes)
     samples = 0
     t_start = time.time()
     for update in range(1, cfg.updates + 1):
@@ -331,7 +432,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
             w = np.arange(1, len(league_pool) + 1, dtype=np.float64)
             league_net.load_state_dict(league_pool[int(rng.choice(len(league_pool), p=w / w.sum()))])
         buf_obs = np.zeros((T, S, env.obs_size), np.float32)
-        buf_c = np.zeros((T, S, len(CAT_SIZES)), np.int64)
+        buf_c = np.zeros((T, S, n_cat), np.int64)
         buf_t = np.zeros((T, S, 2), np.float32)
         buf_logp = np.zeros((T, S), np.float32)
         buf_v = np.zeros((T, S), np.float32)
@@ -343,7 +444,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
             with torch.no_grad():
                 c, t, logp, v = policy.act(torch.from_numpy(o))
             c, t = c.numpy(), t.numpy()
-            actions[:] = to_env_actions(c, t)
+            actions[:] = policy.env_actions(c, t)
             opp.fill(env, actions, o, league_net if cfg.league > 0.0 else None)
             buf_obs[step], buf_c[step], buf_t[step] = o, c, t
             buf_logp[step], buf_v[step] = logp.numpy(), v.numpy()
@@ -372,7 +473,7 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
         ret = adv + buf_v
         sel = np.broadcast_to(opp.learner, (T, S)).reshape(-1)
         b_obs = torch.from_numpy(buf_obs.reshape(-1, env.obs_size)[sel])
-        b_c = torch.from_numpy(buf_c.reshape(-1, len(CAT_SIZES))[sel])
+        b_c = torch.from_numpy(buf_c.reshape(-1, n_cat)[sel])
         b_t = torch.from_numpy(buf_t.reshape(-1, 2)[sel])
         b_logp = torch.from_numpy(buf_logp.reshape(-1)[sel])
         b_adv = torch.from_numpy(adv.reshape(-1)[sel])
@@ -404,9 +505,10 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
                "turn_std_deg": (policy.log_std.exp() * TURN_SCALE).tolist(), "aid": aid}
         if update % cfg.eval_every == 0 or update == cfg.updates:
             policy.eval()
-            row["eval"] = [evaluate(policy, norm, cfg, o, seed=1000 + update) for o in EVAL_OPPONENTS]
+            row["eval"] = [evaluate(policy, norm, cfg, o, seed=1000 + update)
+                           for o in (cfg.eval_opponents or STANDARD_EVAL)]
             if snapshots:
-                frozen = Policy(env.obs_size, cfg.hidden)
+                frozen = Policy(env.obs_size, cfg.hidden, cfg.slot_keys, cfg.use_key)
                 frozen.load_state_dict(snapshots[0]["state"])
                 ev = evaluate(policy, norm, cfg, "frozen", seed=2000 + update, frozen=frozen)
                 ev["frozen_update"] = snapshots[0]["update"]
@@ -431,4 +533,9 @@ def summary(row: dict) -> str:
         s += (f"\n    vs {e['opponent']:15s} win {e['win_rate']:.2f} draw {e['draw_rate']:.2f} "
               f"hits/click {e['hits_per_click']:.2f} aim {e['aim_error_deg']:5.1f}deg "
               f"dmg {e['damage_dealt']:5.1f}/{e['damage_taken']:5.1f} adv {e['advantage_share']:.2f}")
+        if e.get("swaps", 0) or e.get("disables", 0) or e.get("blocked_hits", 0):
+            s += (f"\n      swaps {e['swaps']:.2f} best {e['best_share']:.2f} axe-swaps up/down "
+                  f"{e['axe_swaps_raised']:.2f}/{e['axe_swaps_lowered']:.2f} disables {e['disables']:.2f} "
+                  f"blocked {e['blocked_hits']:.2f} sword-hits-down {e['sword_hits_lowered']:.2f} "
+                  f"axe-attacks {e['axe_attacks']:.2f} swap-backs {e['swap_backs']:.2f}")
     return s

@@ -8,8 +8,8 @@ start B z=3.0 yaw=180 offhand=shield
 20 idle | idle
 3  idle | use
 1  tap  | use
-5  w    | use
-10 idle | use
+8  w    | use
+7  idle | use
 1  tap  | use
 5  idle | use
 15 idle | idle
