@@ -161,14 +161,17 @@ void writeState(std::FILE* out, const DuelPlayer& d) {
                  "\", \"server.vel.y\": \"%016" PRIx64 "\", \"server.vel.z\": \"%016" PRIx64
                  "\", \"server.yRot\": \"%08" PRIx32 "\", \"speedAttr\": \"%016" PRIx64
                  "\", \"pick\": %d, \"pick.x\": \"%016" PRIx64 "\", \"pick.y\": \"%016" PRIx64 "\", \"pick.z\": \"%016" PRIx64
-                 "\", \"missTime\": %d, \"gotVelocity\": %s, \"sentAttack\": %s, \"teleports\": 0}",
+                 "\", \"missTime\": %d, \"gotVelocity\": %s, \"sentAttack\": %s, \"teleports\": 0"
+                 ", \"view.x\": \"%016" PRIx64 "\", \"view.y\": \"%016" PRIx64 "\", \"view.z\": \"%016" PRIx64
+                 "\", \"view.yRot\": \"%08" PRIx32 "\", \"view.recv\": %d}",
                  j::dbits(c.x), j::dbits(c.y), j::dbits(c.z), j::dbits(c.vel.x), j::dbits(c.vel.y), j::dbits(c.vel.z),
                  j::fbits(c.yRot), tf(c.onGround), tf(c.sprinting), tf(s.body.sprinting), j::fbits(s.health),
                  s.hurtTime, s.damageCooldownTime, tf(s.body.onGround), j::dbits(s.fallDistance),
                  j::fbits(s.attackStrengthScale(0.5F)), j::dbits(s.body.vel.x), j::dbits(s.body.vel.y),
                  j::dbits(s.body.vel.z), j::fbits(s.body.yRot), j::dbits(c.movementSpeedAttribute()),
                  static_cast<int>(d.pick.type), j::dbits(d.pick.location.x), j::dbits(d.pick.location.y),
-                 j::dbits(d.pick.location.z), d.missTime, tf(d.gotVelocity), tf(d.sentAttack));
+                 j::dbits(d.pick.location.z), d.missTime, tf(d.gotVelocity), tf(d.sentAttack), j::dbits(d.view.pos.x),
+                 j::dbits(d.view.pos.y), j::dbits(d.view.pos.z), j::fbits(d.view.yRot), d.viewRecv);
 }
 
 }  // namespace
@@ -187,6 +190,7 @@ int main(int argc, char** argv) {
     Duel duel;
     duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world, s.a.health);
     duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world, s.b.health);
+    duel.pairViews();
 
     std::FILE* out = std::fopen(argv[3], "w");
     if (!out) return 2;
@@ -200,7 +204,8 @@ int main(int argc, char** argv) {
                  "\"server.vel.x\": \"f64\", \"server.vel.y\": \"f64\", \"server.vel.z\": \"f64\", "
                  "\"server.yRot\": \"f32\", \"speedAttr\": \"f64\", \"pick\": \"i32\", \"pick.x\": \"f64\", "
                  "\"pick.y\": \"f64\", \"pick.z\": \"f64\", \"missTime\": \"i32\", \"gotVelocity\": \"bool\", "
-                 "\"sentAttack\": \"bool\", \"teleports\": \"i32\"}, "
+                 "\"sentAttack\": \"bool\", \"teleports\": \"i32\", \"view.x\": \"f64\", \"view.y\": \"f64\", "
+                 "\"view.z\": \"f64\", \"view.yRot\": \"f32\", \"view.recv\": \"i32\"}, "
                  "\"meta\": {\"scenario\": \"%s\", \"players\": [\"A\", \"B\"]}}\n",
                  s.name.c_str());
     for (size_t t = 0; t < s.ta.size(); ++t) {
@@ -222,8 +227,5 @@ int main(int argc, char** argv) {
         duel.deliver();
     }
     std::fclose(out);
-    if (duel.clientPushTicks > 0)
-        std::fprintf(stderr, "%s: note: players overlapped for %d tick(s); client-side pushing is not modelled\n",
-                     s.name.c_str(), duel.clientPushTicks);
     return 0;
 }

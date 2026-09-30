@@ -36,6 +36,16 @@ uint64_t hashDuel(const Duel& d) {
         mix(static_cast<uint64_t>(p.missTime)); mix(static_cast<uint64_t>(p.clientAttackStrengthTicker));
         mix(p.isDestroying); mix(p.lastAttackHeld); mix(static_cast<uint64_t>(p.send.positionReminder));
         mix(p.send.wasSprinting);
+        const EntityTracker& tr = p.tracker;
+        mix(j::dbits(tr.base.x)); mix(j::dbits(tr.base.y)); mix(j::dbits(tr.base.z));
+        mix(static_cast<uint64_t>(tr.tickCount)); mix(static_cast<uint64_t>(tr.teleportDelay));
+        mix(static_cast<uint64_t>(tr.ticksSinceLastStep)); mix(tr.wasOnGround);
+        mix(static_cast<uint64_t>(static_cast<uint8_t>(tr.lastSentYRot))); mix(static_cast<uint64_t>(static_cast<uint8_t>(tr.lastSentXRot)));
+        const RemoteView& v = p.view;
+        mix(v.exists); mix(j::dbits(v.pos.x)); mix(j::dbits(v.pos.y)); mix(j::dbits(v.pos.z)); mix(j::fbits(v.yRot));
+        mix(j::dbits(v.codecBase.x)); mix(j::dbits(v.codecBase.z)); mix(j::dbits(v.data.pos.x)); mix(j::dbits(v.data.pos.z));
+        mix(static_cast<uint64_t>(v.stepCount)); mix(j::fbits(v.currentStepTicks)); mix(j::fbits(v.remainingTicks));
+        mix(j::fbits(v.interpolationSpeed));
     }
     return h;
 }
