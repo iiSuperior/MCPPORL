@@ -71,11 +71,14 @@ class RewardConfig:
     # Must equal the learner's discount, or the shaping can change which
     # policy is optimal.
     gamma: float = 0.99
+    # Potential-based aim shaping: pays for turning the crosshair onto the
+    # opponent as the client sees it (1 on target, 0 at 90 degrees off).
+    aim_shaping: float = 0.2
 
     def __post_init__(self) -> None:
         if not 0.0 < self.gamma <= 1.0:
             raise ValueError(f"gamma={self.gamma} must be in (0, 1]")
-        for name in ("damage_dealt", "damage_taken", "win", "loss", "reach_shaping"):
+        for name in ("damage_dealt", "damage_taken", "win", "loss", "reach_shaping", "aim_shaping"):
             if getattr(self, name) < 0.0:
                 raise ValueError(f"{name} must be non-negative (signs are fixed by the reward's definition)")
 

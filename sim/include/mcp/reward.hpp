@@ -25,6 +25,8 @@
 #include "mcp/duel.hpp"
 #include "mcp/reach.hpp"
 
+#include <cmath>
+
 namespace mcp {
 
 struct RewardWeights {
@@ -34,6 +36,7 @@ struct RewardWeights {
     float loss = 10.0F;
     float reachShaping = 0.1F;
     float gamma = 0.99F;
+    float aimShaping = 0.2F;
 };
 
 // Reach as each client would resolve a click at the start of the next tick:
@@ -51,16 +54,34 @@ MCP_HD inline reach::ReachState reachOf(const Duel& d, int32_t i) {
 
 MCP_HD inline float reachPotential(const reach::ReachState& r) { return static_cast<float>(r.advantage()); }
 
+// Aim potential: 1 when the crosshair points at the chest of the opponent as
+// this client sees it, falling linearly to 0 at 90 degrees off. Also
+// potential-based, so it teaches pointing at the opponent early without
+// changing which policy is optimal.
+inline float aimPotential(const Duel& d, int32_t i) {
+    const DuelPlayer& me = d.p[i];
+    double eye = static_cast<double>(CombatConstants::kEyeHeightStanding);
+    double dx = me.view.pos.x - me.client.x, dz = me.view.pos.z - me.client.z;
+    double dy = me.view.pos.y + 0.9 - (me.client.y + eye);
+    float yaw = static_cast<float>(std::atan2(-dx, dz) * 57.29577951308232);
+    float pitch = static_cast<float>(-std::atan2(dy, std::sqrt(dx * dx + dz * dz)) * 57.29577951308232);
+    float ey = duel::wrapDegrees(yaw - me.client.yRot), ep = pitch - me.client.xRot;
+    float err = std::sqrt(ey * ey + ep * ep);
+    return 1.0F - (err < 90.0F ? err : 90.0F) / 90.0F;
+}
+
 // Remembers the previous state's health and potentials between ticks.
 struct DuelRewards {
     float health[2] = {0.0F, 0.0F};
     float phi[2] = {0.0F, 0.0F};
+    float aim[2] = {0.0F, 0.0F};
 
     // At the start of an episode (after Duel::reset).
     MCP_HD void reset(const Duel& d) {
         for (int32_t i = 0; i < 2; ++i) {
             health[i] = d.p[i].server.health;
             phi[i] = reachPotential(reachOf(d, i));
+            aim[i] = aimPotential(d, i);
         }
     }
 
@@ -82,6 +103,9 @@ struct DuelRewards {
             float next = done ? 0.0F : reachPotential(reachOf(d, i));  // phi(terminal) = 0
             r += w.reachShaping * (w.gamma * next - phi[i]);
             phi[i] = next;
+            float nextAim = done ? 0.0F : aimPotential(d, i);
+            r += w.aimShaping * (w.gamma * nextAim - aim[i]);
+            aim[i] = nextAim;
             out[i] = r;
         }
     }

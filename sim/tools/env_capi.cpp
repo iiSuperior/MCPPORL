@@ -15,9 +15,10 @@ int mcp_env_obs_size() { return kObsSize; }
 int mcp_env_action_size() { return kActionSize; }
 int mcp_env_stats_size() { return kEpisodeStatsSize; }
 
-// reward: damage_dealt, damage_taken, win, loss, reach_shaping, gamma.
+// reward: damage_dealt, damage_taken, win, loss, reach_shaping, gamma, aim_shaping.
 void* mcp_env_create(int n, unsigned long long seed, const char* sinTablePath, int maxTicks, unsigned weaponMask,
-                     int sameWeapon, const float* reward, float maxTurnDegPerTick) {
+                     int sameWeapon, const float* reward, float maxTurnDegPerTick, double minStartDist,
+                     double maxStartDist) {
     std::vector<float> table(mth::kSinTableSize);
     std::ifstream in(sinTablePath, std::ios::binary);
     for (auto& v : table) {
@@ -30,8 +31,10 @@ void* mcp_env_create(int n, unsigned long long seed, const char* sinTablePath, i
     c.maxTicks = maxTicks;
     c.weaponMask = weaponMask;
     c.sameWeapon = sameWeapon != 0;
-    c.reward = RewardWeights{reward[0], reward[1], reward[2], reward[3], reward[4], reward[5]};
+    c.reward = RewardWeights{reward[0], reward[1], reward[2], reward[3], reward[4], reward[5], reward[6]};
     c.caps.maxTurnDegPerTick = maxTurnDegPerTick;
+    c.minStartDist = minStartDist;
+    c.maxStartDist = maxStartDist;
     return new BatchEnv(n, seed, std::move(table), c);
 }
 

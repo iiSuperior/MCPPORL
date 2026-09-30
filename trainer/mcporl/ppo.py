@@ -45,6 +45,7 @@ class PPOConfig:
     self_play: float = 0.5      # share of duels where both slots are the learner
     dummy: float = 0.3          # share of scripted duels against a standing dummy
     max_ticks: int = 600
+    start_dist: tuple[float, float] = (2.5, 6.0)
     weapons: tuple[str, ...] = ("diamond_sword",)
     seed: int = 1
     eval_every: int = 10
@@ -217,7 +218,8 @@ def train(cfg: PPOConfig, out_dir: Path, log=print) -> Policy:
     torch.manual_seed(cfg.seed)
     torch.set_num_threads(max(1, torch.get_num_threads()))
     rng = np.random.default_rng(cfg.seed)
-    env = DuelEnv(cfg.n_duels, seed=cfg.seed, max_ticks=cfg.max_ticks, weapons=cfg.weapons, reward=cfg.reward)
+    env = DuelEnv(cfg.n_duels, seed=cfg.seed, max_ticks=cfg.max_ticks, weapons=cfg.weapons, reward=cfg.reward,
+                  start_dist=cfg.start_dist)
     opp = Opponents(cfg.n_duels, cfg, rng)
     policy = Policy(env.obs_size, cfg.hidden)
     optim = torch.optim.Adam(policy.parameters(), lr=cfg.lr, eps=1e-5)

@@ -49,7 +49,7 @@ def _load() -> ctypes.CDLL:
     lib = ctypes.CDLL(str(_find_library()))
     lib.mcp_env_create.restype = ctypes.c_void_p
     lib.mcp_env_create.argtypes = [ctypes.c_int, ctypes.c_ulonglong, ctypes.c_char_p, ctypes.c_int, ctypes.c_uint,
-                                   ctypes.c_int, _F, ctypes.c_float]
+                                   ctypes.c_int, _F, ctypes.c_float, ctypes.c_double, ctypes.c_double]
     lib.mcp_env_destroy.argtypes = [ctypes.c_void_p]
     lib.mcp_env_observe.argtypes = [ctypes.c_void_p, _F]
     lib.mcp_env_step.argtypes = [ctypes.c_void_p, _F, _F, _F, _U8, _F]
@@ -82,7 +82,7 @@ def _p(a: np.ndarray, t):
 class DuelEnv:
     def __init__(self, n: int, seed: int = 1, max_ticks: int = 600, weapons: tuple[str, ...] = ("hand",),
                  same_weapon: bool = True, reward: RewardConfig = RewardConfig(),
-                 fairness: FairnessCaps = FairnessCaps()):
+                 fairness: FairnessCaps = FairnessCaps(), start_dist: tuple[float, float] = (3.0, 10.0)):
         L = lib()
         self.n = n
         self.obs_size = L.mcp_env_obs_size()
@@ -92,9 +92,9 @@ class DuelEnv:
         for w in weapons:
             mask |= 1 << WEAPONS.index(w)
         r = np.array([reward.damage_dealt, reward.damage_taken, reward.win, reward.loss, reward.reach_shaping,
-                      reward.gamma], dtype=np.float32)
+                      reward.gamma, reward.aim_shaping], dtype=np.float32)
         self._h = L.mcp_env_create(n, seed, str(SIN_TABLE).encode(), max_ticks, mask, int(same_weapon), _p(r, _F),
-                                   fairness.max_turn_deg_per_tick)
+                                   fairness.max_turn_deg_per_tick, start_dist[0], start_dist[1])
         if not self._h:
             raise RuntimeError("could not create the environment (sin table?)")
         self._obs = np.zeros((2 * n, self.obs_size), np.float32)

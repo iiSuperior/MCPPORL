@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
         DuelRewards rw;
         rw.reset(d);
         RewardWeights w;
+        w.aimShaping = 0.0F;
         reach::ReachState r0 = reachOf(d, 0);
         check(r0.canHit() && r0.canBeHit(), "players 2.5 apart reach each other");
         DuelInput a{}, b{};
@@ -71,6 +72,7 @@ int main(int argc, char** argv) {
         RewardWeights w;
         w.damageDealt = w.damageTaken = w.win = w.loss = 0.0F;
         w.reachShaping = 1.0F;
+        w.aimShaping = 0.0F;
         w.gamma = 1.0F;
         FairnessCaps caps;
         FairnessStats stats;
@@ -126,6 +128,7 @@ int main(int argc, char** argv) {
         DuelRewards rw;
         rw.reset(d);
         RewardWeights w;
+        w.aimShaping = 0.0F;  // the aim term is checked on its own below
         DuelInput a{}, b{};
         b.yaw = 180.0F;
         float out[2];
@@ -138,6 +141,34 @@ int main(int argc, char** argv) {
         }
         check(zero, "idling in mutual range is worth nothing");
         check(w.gamma * 1.0F - 1.0F < 0.0F, "holding a reach advantage costs a little per tick, it is not paid");
+    }
+
+    // 4. The aim term telescopes too (gamma 1): it sums to aim(now) -
+    //    aim(start), up to float rounding (aim(now) is 0 once the episode ends).
+    {
+        RewardWeights w;
+        w.damageDealt = w.damageTaken = w.win = w.loss = w.reachShaping = 0.0F;
+        w.aimShaping = 1.0F;
+        w.gamma = 1.0F;
+        Duel d;
+        d.reset(DuelStart{0.5, 0.5, 30.0F, 2.0F}, DuelStart{0.5, 4.0, 180.0F, 2.0F}, world);
+        DuelRewards rw;
+        rw.reset(d);
+        float aim0 = rw.aim[0];
+        double sum = 0.0;
+        float out[2];
+        DuelInput a{}, b{};
+        b.yaw = 180.0F;
+        for (int t = 0; t < 200 && !d.done(); ++t) {
+            a.yaw = 30.0F - static_cast<float>(t) * 1.5F;  // sweeps across the target
+            a.keys.forward = t > 40;
+            a.attack = t % 13 == 12;
+            d.step(a, b, world, sinTab.data());
+            if (!d.done()) d.deliver();
+            rw.step(d, w, out);
+            sum += out[0];
+        }
+        check(std::fabs(sum - (rw.aim[0] - aim0)) < 1e-4, "aim shaping telescopes");
     }
 
     if (failures == 0) std::printf("reward: all checks passed\n");
