@@ -20,13 +20,18 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.LpVec3;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
+import net.minecraft.network.protocol.game.ClientboundChunkBatchFinishedPacket;
+import net.minecraft.network.protocol.game.ClientboundEntityPositionSyncPacket;
+import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundAttackPacket;
+import net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket;
 import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
@@ -44,6 +49,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.PositionMoveRotation;
+import net.minecraft.world.entity.PositionPath;
+import net.minecraft.network.protocol.game.VecDeltaCodec;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -91,6 +98,11 @@ public final class CombatOracle {
         // per-tick trace flags
         boolean gotVelocity, sentAttack;
         int teleports;  // server position corrections applied during the scenario
+        // The other player as this client sees it (RemotePlayer), created by the
+        // tracker's ClientboundAddEntityPacket, and the movement packets for it
+        // handled before this tick (bits: 1 Pos, 2 PosRot, 4 Rot, 8 PositionSync, 16 AddEntity).
+        RemoteView view;
+        int viewRecv;
 
         Side(String name, OraclePlayer client, ServerPlayer server, EmbeddedChannel channel) {
             this.name = name;
@@ -107,7 +119,8 @@ public final class CombatOracle {
             "server.onGround:bool", "server.fallDistance:f64", "server.attackStrength:f32",
             "server.vel.x:f64", "server.vel.y:f64", "server.vel.z:f64", "server.yRot:f32", "speedAttr:f64",
             "pick:i32", "pick.x:f64", "pick.y:f64", "pick.z:f64", "missTime:i32",
-            "gotVelocity:bool", "sentAttack:bool", "teleports:i32"};
+            "gotVelocity:bool", "sentAttack:bool", "teleports:i32",
+            "view.x:f64", "view.y:f64", "view.z:f64", "view.yRot:f32", "view.recv:i32"};
 
     private final MinecraftServer server;
     private final ServerLevel level;
@@ -142,14 +155,13 @@ public final class CombatOracle {
             // tick (tickPlayer -> resetPosition) initialises the anti-cheat's
             // last-good position before the teleport acknowledgement is handled.
             serverStep(List.of(a, b));
-            for (Side side : List.of(a, b)) {
-                deliver(side);  // applies the login teleport and queues its acknowledgement
-                side.toServer.add(new ServerboundPlayerLoadedPacket());
-            }
+            deliver(a, b);  // applies the login teleport and queues its acknowledgement
+            deliver(b, a);
+            for (Side side : List.of(a, b)) side.toServer.add(new ServerboundPlayerLoadedPacket());
             for (int i = 0; i < 2; i++) {
                 serverStep(List.of(a, b));
-                deliver(a);
-                deliver(b);
+                deliver(a, b);
+                deliver(b, a);
             }
             // Vanilla finds nearby entities (pushing, picks) through the level's
             // entity sections, which only answer once the arena chunks are fully
@@ -160,6 +172,11 @@ public final class CombatOracle {
                 }
             }
             for (Side side : List.of(a, b)) {
+                if (side.view == null) {
+                    throw new IllegalStateException(side.name + " has not been sent the other player after the handshake");
+                }
+                System.out.println("[oracle] " + s.name() + " " + side.name + " view after handshake: recv=" + side.viewRecv
+                        + " pos=" + side.view.position() + " other=" + (side == a ? b : a).server.position());
                 side.teleports = 0;
                 side.xLast = side.client.getX();
                 side.yLast = side.client.getY();
@@ -167,8 +184,8 @@ public final class CombatOracle {
             }
             int t = 0;
             for (CombatScenario.Tick tick : s.ticks()) {
-                step(a, b, tick.a(), b.server.getId());
-                step(b, a, tick.b(), a.server.getId());
+                step(a, tick.a(), b.server.getId());
+                step(b, tick.b(), a.server.getId());
                 serverStep(List.of(a, b));
                 requireLoaded(a, t);
                 requireLoaded(b, t);
@@ -180,8 +197,8 @@ public final class CombatOracle {
                             + (b.server.isDeadOrDying() ? "B" : "") + " died at t=" + (t - 1));
                     break;
                 }
-                deliver(a);
-                deliver(b);
+                deliver(a, b);
+                deliver(b, a);
             }
         } finally {
             for (Side side : List.of(a, b)) {
@@ -224,7 +241,7 @@ public final class CombatOracle {
     }
 
     /** One client tick for `me`: pick, keybinds (click), movement, then sendChanges (Minecraft.tick). */
-    private void step(Side me, Side other, CombatScenario.Input in, int targetId) {
+    private void step(Side me, CombatScenario.Input in, int targetId) {
         OraclePlayer c = me.client;
         me.sentAttack = false;
         // The mouse turns the player between ticks, so this tick's rotation is in
@@ -234,7 +251,7 @@ public final class CombatOracle {
         // Minecraft.tick: pick(1.0F), then handleKeybinds (startAttack per click,
         // then continueAttack with the key state), then missTime--.
         me.tick++;
-        me.pick = pick(c, other.server);
+        me.pick = pick(c, me.view);
         boolean instantAttack = false;
         if (in.attack()) instantAttack |= startAttack(me, targetId);
         continueAttack(me, !instantAttack && in.attackHeld());
@@ -243,6 +260,10 @@ public final class CombatOracle {
         c.setOldPosAndRot();
         c.tickCount++;
         c.tick();
+        // ClientLevel.tickEntities runs in insertion order: the local player (added
+        // at login) first, then the remote player (added on its AddEntity packet).
+        // Only commonTick moves the remote player; see RemoteView.
+        me.view.clientCommonTick();
         sendChanges(me);
         // Minecraft.tick ends every client tick with this packet; the server uses it
         // to reset per-tick bookkeeping such as receivedPositionThisTick.
@@ -314,9 +335,9 @@ public final class CombatOracle {
     /**
      * LocalPlayer.pick(camera, blockRange, entityRange, 1.0F) for a bare hand
      * (raycastHitResult without an ATTACK_RANGE component). The candidate is the
-     * target's server copy: the freshest position the client has been sent.
+     * other player as this client sees it (RemoteView), or none before it was sent.
      */
-    static HitResult pick(OraclePlayer camera, Entity target) {
+    static HitResult pick(OraclePlayer camera, @org.jspecify.annotations.Nullable Entity target) {
         double blockInteractionRange = camera.blockInteractionRange();
         double entityInteractionRange = camera.entityInteractionRange();
         double maxDistance = Math.max(blockInteractionRange, entityInteractionRange);
@@ -331,7 +352,7 @@ public final class CombatOracle {
         Vec3 direction = camera.getViewVector(1.0F);
         Vec3 to = from.add(direction.x * maxDistance, direction.y * maxDistance, direction.z * maxDistance);
         AABB box = camera.getBoundingBox().expandTowards(direction.scale(maxDistance)).inflate(1.0, 1.0, 1.0);
-        EntityHitResult entityHitResult = entityHitResult(camera, target, from, to, box, maxDistanceSq);
+        EntityHitResult entityHitResult = target == null ? null : entityHitResult(camera, target, from, to, box, maxDistanceSq);
         return entityHitResult != null && entityHitResult.getLocation().distanceToSqr(from) < blockDistanceSq
                 ? filterHitResult(entityHitResult, from, entityInteractionRange)
                 : filterHitResult(blockHitResult, from, blockInteractionRange);
@@ -451,6 +472,7 @@ public final class CombatOracle {
         else if (p instanceof ServerboundClientTickEndPacket e) c.handleClientTickEnd(e);
         else if (p instanceof ServerboundPunchPacket pp) c.handlePunch(pp);
         else if (p instanceof ServerboundPlayerActionPacket pa) c.handlePlayerAction(pa);
+        else if (p instanceof ServerboundChunkBatchReceivedPacket cb) c.handleChunkBatchReceived(cb);
         else throw new IllegalStateException("no handler for " + p.getClass().getSimpleName());
     }
 
@@ -470,11 +492,50 @@ public final class CombatOracle {
     }
 
     /** Client handles queued server packets before its next tick (ClientPacketListener). */
-    private static void deliver(Side s) {
+    private static void deliver(Side s, Side other) {
         s.gotVelocity = false;
+        s.viewRecv = 0;
         int self = s.server.getId();
+        int otherId = other.server.getId();
         for (Packet<?> p : s.toClient) {
-            if (p instanceof ClientboundPlayerPositionPacket pos) {
+            if (p instanceof ClientboundAddEntityPacket add && add.getId() == otherId) {
+                // ClientPacketListener.handleAddEntity -> RemotePlayer.recreateFromPacket
+                if (s.view != null) throw new IllegalStateException(s.name + " was sent the other player twice");
+                RemoteView v = new RemoteView(s.client.level(), other.server.getGameProfile());
+                v.recreateFromPacket(add);
+                v.setOldPosAndRot();
+                s.view = v;
+                s.viewRecv |= 16;
+            } else if (p instanceof ClientboundMoveEntityPacket m && m.getEntity(other.server.level()) == other.server) {
+                // ClientPacketListener.handleMoveEntity, not locally authoritative
+                RemoteView v = requireView(s, p);
+                if (m.hasPosition()) {
+                    VecDeltaCodec codec = v.getPositionCodec();
+                    PositionPath pos = m.getPositionDelta().decode(codec);
+                    codec.setBase(pos.endPosition());
+                    if (m.hasRotation()) v.moveOrInterpolateTo(pos, m.getYRot(), m.getXRot());
+                    else v.moveOrInterpolateTo(pos);
+                } else if (m.hasRotation()) {
+                    v.moveOrInterpolateTo(m.getYRot(), m.getXRot());
+                }
+                v.setOnGround(m.isOnGround());
+                s.viewRecv |= m.hasPosition() ? (m.hasRotation() ? 2 : 1) : 4;
+            } else if (p instanceof ClientboundEntityPositionSyncPacket sync && sync.id() == otherId) {
+                // ClientPacketListener.handleEntityPositionSync (the view is a ticking entity)
+                RemoteView v = requireView(s, p);
+                PositionPath path = sync.position();
+                Vec3 pos = path.endPosition();
+                v.getPositionCodec().setBase(pos);
+                if (v.position().distanceToSqr(pos) > 4096.0) v.snapTo(pos, sync.yRot(), sync.xRot());
+                else v.moveOrInterpolateTo(path, sync.yRot(), sync.xRot());
+                v.setOnGround(sync.onGround());
+                s.viewRecv |= 8;
+            } else if (p instanceof ClientboundChunkBatchFinishedPacket) {
+                // A real client acknowledges each chunk batch; the server holds back
+                // entity pairing for chunks still pending (ChunkMap.isChunkTracked).
+                s.toServer.add(new ServerboundChunkBatchReceivedPacket(64.0F));
+                s.ignoredToClient.merge("ClientboundChunkBatchFinishedPacket(acked)", 1, Integer::sum);
+            } else if (p instanceof ClientboundPlayerPositionPacket pos) {
                 OraclePlayer c = s.client;
                 PositionMoveRotation now = new PositionMoveRotation(c.position(), c.getDeltaMovement(), c.getYRot(), c.getXRot());
                 PositionMoveRotation to = PositionMoveRotation.calculateAbsolute(now, pos.change(), pos.relatives());
@@ -506,6 +567,11 @@ public final class CombatOracle {
             }
         }
         s.toClient.clear();
+    }
+
+    private static RemoteView requireView(Side s, Packet<?> p) {
+        if (s.view == null) throw new IllegalStateException(s.name + " got " + p.getClass().getSimpleName() + " before the other player was added");
+        return s.view;
     }
 
     /** Encode and decode through the game's own LpVec3, as the network would. */
@@ -582,7 +648,10 @@ public final class CombatOracle {
                 + ", \"pick.z\": " + OracleMain.hex(s.pick.getLocation().z)
                 + ", \"missTime\": " + s.missTime
                 + ", \"gotVelocity\": " + s.gotVelocity + ", \"sentAttack\": " + s.sentAttack
-                + ", \"teleports\": " + s.teleports + "}";
+                + ", \"teleports\": " + s.teleports
+                + ", \"view.x\": " + OracleMain.hex(s.view.getX()) + ", \"view.y\": " + OracleMain.hex(s.view.getY())
+                + ", \"view.z\": " + OracleMain.hex(s.view.getZ()) + ", \"view.yRot\": " + OracleMain.hex(s.view.getYRot())
+                + ", \"view.recv\": " + s.viewRecv + "}";
     }
 
     /** Stone blocks the pick probe adds to the flat arena, to exercise occlusion. */
