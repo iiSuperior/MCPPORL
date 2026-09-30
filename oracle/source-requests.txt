@@ -68,3 +68,15 @@ net.minecraft.world.effect.RegenerationMobEffect :all
 net.minecraft.world.effect.PoisonMobEffect :all
 net.minecraft.world.effect.AbsorptionMobEffect :all
 net.minecraft.world.item.enchantment.Enchantment modifyDamage modifyKnockback modifyDamageProtection modifyArmorEffectiveness
+
+# Batch 28: items research phase 2 — remaining gaps.
+net.minecraft.world.entity.Entity hurtOrSimulate
+net.minecraft.world.entity.LivingEntity postPiercingAttack doHurtEquipment getWeaponItem getAttackRangeWith tickEffects
+net.minecraft.world.entity.LivingEntity :grep=shouldApplyEffectTickThisTick
+net.minecraft.world.item.Item :grep=public Properties (axe|sword)
+net.minecraft.world.item.Items :grep=DIAMOND_HELMET
+net.minecraft.world.item.component.Consumables defaultFood
+net.minecraft.world.item.enchantment.EnchantmentHelper modifyArmorEffectiveness
+net.minecraft.world.item.ItemStack hurtAndBreak getDamageSource
+net.minecraft.server.network.ServerGamePacketListenerImpl :grep=[Uu]seItem
+net.minecraft.world.entity.ai.attributes.Attributes :grep=SWEEPING_DAMAGE_RATIO|ENTITY_INTERACTION_RANGE|MAX_ABSORPTION|SAFE_FALL_DISTANCE|SNEAKING_SPEED
