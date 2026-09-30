@@ -2,17 +2,12 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 23: client-side pushing by remote players, tracker cadence, sync flags.
-net.minecraft.world.entity.Entity push isPushable :grep=syncPosition|needsSync\s=|boolean noPhysics
-net.minecraft.world.entity.LivingEntity pushEntities doPush isPushable
-net.minecraft.world.entity.player.Player isPushable
-net.minecraft.world.entity.EntitySelector pushableBy
-net.minecraft.world.level.Level getPushableEntities
-net.minecraft.world.entity.UpdateInterval :all
-net.minecraft.world.entity.EntityType :grep=PLAYER =|Builder.<Player>|updateInterval\(2\)
-net.minecraft.server.level.ServerPlayer :grep=syncPosition
-net.minecraft.server.network.ServerGamePacketListenerImpl :grep=syncPosition
-net.minecraft.client.player.LocalPlayer :grep=isLocalPlayer|pushEntities
-net.minecraft.client.multiplayer.ClientLevel addEntity :grep=tickingEntities
-net.minecraft.world.level.entity.EntityTickList :all
-net.minecraft.client.Minecraft :grep=tickEntities|handleKeybinds\(\)|gameRenderer.pick|missTime--
+# Batch 24: tracker pairing, sync triggers, predicted movement.
+net.minecraft.world.entity.Entity move
+net.minecraft.world.entity.LivingEntity knockback setHealth
+net.minecraft.network.protocol.game.ClientboundAddEntityPacket ClientboundAddEntityPacket
+net.minecraft.server.level.ServerEntity addPairing removePairing sendDirtyEntityData
+net.minecraft.network.syncher.SynchedEntityData isDirty set
+net.minecraft.server.level.ChunkMap isChunkTracked updatePlayer updatePlayers
+net.minecraft.server.network.PlayerChunkSender :all
+net.minecraft.server.level.ServerLevel :grep=getChunkSource\(\)\.tick|entityTickList\.forEach|tickNonPassenger\(
