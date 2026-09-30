@@ -57,6 +57,30 @@ class FairnessCaps:
 
 
 @dataclass(frozen=True)
+class RewardConfig:
+    """Reward weights (sim/include/mcp/reward.hpp, docs/REWARD.md). Contract:
+    the policy optimises exactly this, so changing it needs retraining."""
+
+    damage_dealt: float = 1.0
+    damage_taken: float = 1.0
+    win: float = 10.0
+    loss: float = 10.0
+    # Potential-based reach shaping: pays for getting into (and keeping the
+    # opponent out of) hit range, never for hovering there.
+    reach_shaping: float = 0.1
+    # Must equal the learner's discount, or the shaping can change which
+    # policy is optimal.
+    gamma: float = 0.99
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.gamma <= 1.0:
+            raise ValueError(f"gamma={self.gamma} must be in (0, 1]")
+        for name in ("damage_dealt", "damage_taken", "win", "loss", "reach_shaping"):
+            if getattr(self, name) < 0.0:
+                raise ValueError(f"{name} must be non-negative (signs are fixed by the reward's definition)")
+
+
+@dataclass(frozen=True)
 class TrainingRanges:
     """What each runtime knob was randomised over during training."""
 
@@ -76,6 +100,7 @@ class ContractConfig:
     action_schema_version: int = 1
     tick_rate: int = 20
     fairness: FairnessCaps = field(default_factory=FairnessCaps)
+    reward: RewardConfig = field(default_factory=RewardConfig)
     ranges: TrainingRanges = field(default_factory=TrainingRanges)
 
     def to_json(self) -> str:
@@ -101,6 +126,7 @@ class ContractConfig:
             action_schema_version=d["action_schema_version"],
             tick_rate=d["tick_rate"],
             fairness=FairnessCaps(**d["fairness"]),
+            reward=RewardConfig(**d["reward"]),
             ranges=ranges,
         )
 

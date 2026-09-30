@@ -1,7 +1,7 @@
 import dataclasses
 import unittest
 
-from mcporl.config import (ContractConfig, FairnessCaps, Range, RuntimeConfig,
+from mcporl.config import (ContractConfig, FairnessCaps, Range, RewardConfig, RuntimeConfig,
                            TrainingRanges, check_deployable)
 
 
@@ -16,6 +16,16 @@ class ConfigTest(unittest.TestCase):
             FairnessCaps(max_clicks_per_tick=2)
         with self.assertRaises(ValueError):
             FairnessCaps(max_turn_deg_per_tick=0.0)
+
+    def test_reward_is_contract_and_validated(self):
+        base = ContractConfig()
+        reshaped = dataclasses.replace(base, reward=RewardConfig(reach_shaping=0.5))
+        self.assertNotEqual(base.fingerprint(), reshaped.fingerprint())
+        self.assertEqual(ContractConfig.from_json(reshaped.to_json()), reshaped)
+        with self.assertRaises(ValueError):
+            RewardConfig(gamma=0.0)
+        with self.assertRaises(ValueError):
+            RewardConfig(win=-1.0)
 
     def test_runtime_change_within_trained_range_is_fine(self):
         self.assertEqual(check_deployable(ContractConfig(), RuntimeConfig(latency_base_ms=240)), [])

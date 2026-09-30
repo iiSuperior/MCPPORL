@@ -62,6 +62,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_reach PRIVATE mcp_sim)
   add_test(NAME reach COMMAND test_reach)
 
+  add_executable(test_reward tests/test_reward.cpp)
+  target_link_libraries(test_reward PRIVATE mcp_sim)
+  add_test(NAME reward COMMAND test_reward ${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin)
+
   add_executable(test_lpvec3 tests/test_lpvec3.cpp)
   target_link_libraries(test_lpvec3 PRIVATE mcp_sim)
   add_test(NAME lpvec3 COMMAND test_lpvec3 ${CMAKE_CURRENT_SOURCE_DIR}/data/lpvec3_golden.txt)
