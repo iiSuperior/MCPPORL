@@ -462,7 +462,15 @@ MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float da
         // dealDefaultKnockback: from the damage source's position (the attacker).
         knockback(victim, static_cast<double>(0.4F), attacker.body.x - victim.body.x, attacker.body.z - victim.body.z);
     }
-    if (victim.health <= 0.0F) victim.dead = true;  // no totem in scope: ServerPlayer.die
+    if (victim.health <= 0.0F) {  // no totem in scope: ServerPlayer.die
+        victim.dead = true;
+        // dropAllDeathLoot empties the hand; the item change resets the attack
+        // strength at the dead player's next Player.tick (still this step).
+        if (victim.weapon != Weapon::Hand) {
+            victim.weapon = Weapon::Hand;
+            victim.weaponChanged = true;
+        }
+    }
     return true;
 }
 
