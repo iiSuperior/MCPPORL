@@ -43,7 +43,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.PositionMoveRotation;
-import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -262,12 +261,50 @@ public final class CombatOracle {
         Vec3 direction = camera.getViewVector(1.0F);
         Vec3 to = from.add(direction.x * maxDistance, direction.y * maxDistance, direction.z * maxDistance);
         AABB box = camera.getBoundingBox().expandTowards(direction.scale(maxDistance)).inflate(1.0, 1.0, 1.0);
-        EntityHitResult entityHitResult = ProjectileUtil.getEntityHitResult(
-                camera, from, to, box, e -> e == target && EntitySelector.CAN_BE_PICKED.test(e), maxDistanceSq);
+        EntityHitResult entityHitResult = entityHitResult(camera, target, from, to, box, maxDistanceSq);
         return entityHitResult != null && entityHitResult.getLocation().distanceToSqr(from) < blockDistanceSq
                 ? filterHitResult(entityHitResult, from, entityInteractionRange)
                 : filterHitResult(blockHitResult, from, blockInteractionRange);
     }
+
+    /**
+     * ProjectileUtil.getEntityHitResult(except, from, to, box, CAN_BE_PICKED, maxValue)
+     * for the one candidate a duel has. On a real client the opponent is found
+     * through ClientLevel.getEntities; in the oracle it is a server copy, which
+     * the server level's spatial lookup does not return here, so the candidate
+     * test (box intersection) is inlined. The loop body is vanilla's.
+     */
+    private static EntityHitResult entityHitResult(Entity except, Entity entity, Vec3 from, Vec3 to, AABB box, double maxValue) {
+        if (!diagnosed) {
+            diagnosed = true;
+            System.out.println("[oracle] diag getEntities: found=" + except.level().getEntities(except, box, e -> e == entity).size()
+                    + " any=" + except.level().getEntities(except, box).size() + " intersects=" + entity.getBoundingBox().intersects(box)
+                    + " byId=" + (except.level().getEntity(entity.getId()) == entity) + " pickable=" + EntitySelector.CAN_BE_PICKED.test(entity)
+                    + " sameLevel=" + (except.level() == entity.level()));
+        }
+        if (!entity.getBoundingBox().intersects(box) || entity == except || !EntitySelector.CAN_BE_PICKED.test(entity)) return null;
+        double nearest = maxValue;
+        Entity hovered = null;
+        Vec3 hoveredPos = null;
+        AABB bb = entity.getBoundingBox().inflate(entity.getPickRadius());
+        java.util.Optional<Vec3> clipPoint = bb.clip(from, to);
+        if (bb.contains(from)) {
+            if (nearest >= 0.0 && entity.canBePickedFromInside()) {
+                hovered = entity;
+                hoveredPos = clipPoint.orElse(from);
+            }
+        } else if (clipPoint.isPresent()) {
+            Vec3 location = clipPoint.get();
+            double dd = from.distanceToSqr(location);
+            if ((dd < nearest || nearest == 0.0) && entity.getRootVehicle() != except.getRootVehicle()) {
+                hovered = entity;
+                hoveredPos = location;
+            }
+        }
+        return hovered == null ? null : new EntityHitResult(hovered, hoveredPos);
+    }
+
+    private static boolean diagnosed;
 
     private static HitResult filterHitResult(HitResult hitResult, Vec3 from, double maxRange) {
         Vec3 hitLocation = hitResult.getLocation();
