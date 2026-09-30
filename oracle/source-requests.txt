@@ -11,3 +11,34 @@ net.minecraft.network.syncher.SynchedEntityData isDirty set
 net.minecraft.server.level.ChunkMap isChunkTracked updatePlayer updatePlayers
 net.minecraft.server.network.PlayerChunkSender :all
 net.minecraft.server.level.ServerLevel :grep=getChunkSource\(\)\.tick|entityTickList\.forEach|tickNonPassenger\(
+
+# Batch 25: items research, phase 2 — item and component data (discovery).
+# Decompiled with the same pipeline as vanilla-source.yml (26.3 client jar,
+# vineflower 1.12.0, tools/extract_methods.py). Findings in docs/items/*.md.
+net.minecraft.core.component.DataComponents :grep=ATTACK_DAMAGE|ATTACK_SPEED|ATTACK_RANGE|MINIMUM_ATTACK_CHARGE|PIERCING_WEAPON|ATTACK_ANIMATION|BLOCKS_ATTACKS|WEAPON|FOOD|CONSUMABLE
+net.minecraft.world.item.component.BlocksAttacks :all
+net.minecraft.world.item.component.Weapon :all
+net.minecraft.world.item.ShieldItem :signatures :fields
+net.minecraft.world.item.SwordItem :signatures :fields
+net.minecraft.world.item.AxeItem :signatures :fields
+net.minecraft.world.item.Item getUseDuration use
+net.minecraft.world.item.Tiers :all
+net.minecraft.world.item.ArmorItem :signatures :fields
+net.minecraft.world.item.ArmorMaterials :all
+net.minecraft.world.item.Items :grep=GOLDEN_APPLE|ENCHANTED_GOLDEN_APPLE|TOTEM_OF_UNDYING
+net.minecraft.world.item.Consumable :all
+net.minecraft.world.food.FoodProperties :all
+
+# Batch 26: items research, phase 2 — entity/damage/effect/enchantment logic (discovery).
+net.minecraft.world.entity.LivingEntity isBlocking getBlockingItem checkTotemDeathProtection hurtArmor getAbsorptionAmount setAbsorptionAmount startUsingItem completeUsingItem getUseItemRemainingTicks isUsingItem hurt actuallyHurt resolveBlockedDamage disableBlockingForSeconds knockback
+net.minecraft.world.entity.LivingEntity :grep=locking|lockAngle|Blocked
+net.minecraft.world.entity.LivingEntity :grep=[Uu]singItem
+net.minecraft.world.entity.player.Player disableBlockingForSeconds attack
+net.minecraft.world.damagesource.CombatRules :signatures :fields resolveBlockedDamage getDamageAfterAbsorb getDamageAfterMagicAbsorb
+net.minecraft.world.damagesource.DamageSource :signatures :fields
+net.minecraft.world.food.FoodData :signatures :fields
+net.minecraft.world.effect.MobEffect :signatures applyEffectTick applyInstantenousEffect getAttributeModifiers
+net.minecraft.world.effect.MobEffects :grep=STRENGTH|WEAKNESS|RESISTANCE|REGENERATION|ABSORPTION|SPEED|SLOWNESS|JUMP_BOOST|FIRE_RESISTANCE|POISON|INSTANT_HEALTH|INSTANT_DAMAGE
+net.minecraft.world.item.enchantment.EnchantmentHelper :signatures modifyKnockback getDamageProtection modifyDamage
+net.minecraft.world.item.enchantment.Enchantments :fields
+net.minecraft.world.entity.ai.attributes.Attributes :grep=ATTACK_DAMAGE|ATTACK_SPEED|ARMOR|ARMOR_TOUGHNESS|KNOCKBACK_RESISTANCE
