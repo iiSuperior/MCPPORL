@@ -220,6 +220,12 @@ It is still clumsy: many swaps without a hit, since the click decision is
 spread over ticks (22% per tick with the axe in reach of the raised shield),
 which is also why the argmax never shows it.
 
+Thirty updates later the greedy policy plays it too (update 110, 256 fights
+each): against the never-lowering shield user 59% wins (was 2%), 0.66
+disables and 0.66 swap-backs a fight, 13.1 damage dealt to 7.9 taken;
+against the panicking one 27% (was 8%); against the standard one 85% with
+0.18 axe swaps a fight.
+
 ### What went wrong on the way (runs 1 to 7)
 
 Each failure was the reward or the rules, not the code:
