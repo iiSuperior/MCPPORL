@@ -66,6 +66,52 @@ Against its own snapshot from ~50 updates earlier it wins 100% at update 60
 and 46% at update 500: self-play improvement has flattened. The next gains
 need a league of past policies and harder opponents, and longer runs.
 
+## Run `sword9`: the tactician, the expert panel, and a league
+
+`sword8` had flattened against itself, and nothing it trained against
+strafed. Run 9 continues from it with harder, more human-like opponents:
+
+- **The tactician**: a port of the melee tactics of the public-domain Fabric
+  mod PvP Bot (github.com/Stepan1411/PVP-bot-fabric): sprint in with bunny
+  hops, strafe within 6 blocks, swing only at full strength then wait 10
+  ticks, crit by dropping sprint and swinging on the way down, W-tap after
+  each swing. It plays fair: turn cap, the lagged view, the crosshair pick.
+  The mod itself fakes its crits (it sets `fallDistance`); a literal port
+  never critted because it jumped while sprinting.
+- **The expert panel**: the tactician with cheats, opponent-only, chosen so
+  the learner's cues stay honest: *snap aim* (no turn cap), *true sight*
+  (aims at the true position, not the lagged view), *range hit* (a swing
+  lands whenever the true hitbox is in reach, without the crosshair pick;
+  such episodes are marked non-replayable). The mod's grounded crits are left
+  out: they would teach that a crit needs no jump. The learner never gets a
+  cheat; the panel is ~10% of scripted duels and evaluated on its own line.
+- **A league**: a share of duels against past snapshots of the learner
+  (the starting checkpoint, then one every 20 updates).
+
+Mix: 30% self-play; of the rest, 30% league, and of the scripted ones 60%
+tactician, 15% expert, a few dummies, the rest aim bots. 200 updates (it
+plateaued by ~60; stopped at 200), no training aids.
+
+| Opponent (win rate) | `sword8` | `sword9` |
+|---|---|---|
+| hard aim bot | 91% | 91% |
+| tactician, fair, crits | 85% | 91% |
+| **tactician, fair, no crits** (strafe + W-tap: the hardest fair opponent) | **60%** | **82%** |
+| expert: snap aim + true sight (crits) | 98% | 98% |
+| expert: all cheats (crits) | 85% | 92% |
+| expert: all cheats, no crits | 68% | ~72% |
+| head to head vs `sword8` | | 48% (deterministic), 54% (sampled) |
+
+The tactician's crit routine makes it *weaker*: the jump costs time the
+learner punishes. Against its own snapshot from 40 updates earlier the
+learner hovered around 40 to 50%: its style drifts between roughly equal
+ones, while head to head against `sword8` it stays even, so the gains
+against scripted opponents did not cost general strength.
+
+Eight episodes of `sword9` (`t00` to `t07`: four against the fair
+tactician, two of them with crits, and four self-play) go to the oracle,
+adding strafing, W-taps and real crits to the replay coverage.
+
 ### What went wrong on the way (runs 1 to 7)
 
 Each failure was the reward or the rules, not the code:
