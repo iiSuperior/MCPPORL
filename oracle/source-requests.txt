@@ -2,8 +2,11 @@
 # Format: <fully.qualified.Class> <member> [<member> ...]
 # Special members: :signatures  :fields  :all  :grep=REGEX  (see tools/extract_methods.py)
 
-# Batch 18: what dying does in the killing tick.
-net.minecraft.world.entity.LivingEntity die isDeadOrDying isImmobile tickDeath checkTotemDeathProtection
-net.minecraft.world.entity.player.Player die isImmobile
-net.minecraft.server.level.ServerPlayer die
-net.minecraft.server.network.ServerGamePacketListenerImpl markClientUnloadedAfterDeath hasClientLoaded :grep=hasClientLoaded|clientLoaded
+# Batch 19: entity pushing between players (server copies push each other).
+net.minecraft.world.entity.LivingEntity pushEntities doPush isPushable
+net.minecraft.world.entity.Entity push isPushable isPassengerOfSameVehicle canBeCollidedWith
+net.minecraft.world.entity.player.Player isPushable doPush
+net.minecraft.server.level.ServerPlayer isPushable doPush push
+net.minecraft.world.level.Level getPushableEntities
+net.minecraft.world.level.EntityGetter getPushableEntities
+net.minecraft.world.entity.EntitySelector pushableBy :grep=pushable
