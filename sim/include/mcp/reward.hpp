@@ -43,6 +43,13 @@ struct RewardWeights {
     // and can be farmed, so the trainer anneals them to 0 (docs/REWARD.md).
     float aimDense = 0.0F;
     float reachDense = 0.0F;
+    // Charged per attack that reaches the opponent but achieves nothing: no
+    // damage and no shield disabled (a hit into a raised shield or into the
+    // damage cooldown). Applied by BatchEnv, which sees each attack's outcome.
+    float wastedAttack = 0.0F;
+    // Charged to both players when an episode hits the time limit, so that
+    // never attacking (and never wasting an attack) is not a safe answer.
+    float draw = 0.0F;
 };
 
 // Reach as each client would resolve a click at the start of the next tick:

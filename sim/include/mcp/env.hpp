@@ -390,7 +390,9 @@ struct BatchEnv {
                     if (env::isAxe(held)) (raisedSeen[k] ? s.axeSwapsRaised : s.axeSwapsLowered) += 1.0F;
                     if (env::isAxe(heldBefore[k]) && !env::isAxe(held) && cdBefore[1 - k] > 0) s.swapBacks += 1.0F;
                 }
-                if (d.p[1 - k].server.shieldCooldown > cdBefore[1 - k]) s.disables += 1.0F;
+                bool disabled = d.p[1 - k].server.shieldCooldown > cdBefore[1 - k];
+                if (disabled) s.disables += 1.0F;
+                if (d.p[k].sentAttack && dealt <= 0.0F && !disabled) r[k] -= cfg.reward.wastedAttack;
                 if (d.p[k].sentAttack) {
                     if (env::isAxe(heldBefore[k])) s.axeAttacks += 1.0F;
                     if (blockingBefore[1 - k] && dealt <= 0.0F) s.blockedHits += 1.0F;
@@ -411,6 +413,10 @@ struct BatchEnv {
                 reward[2 * i + k] = r[k];
             }
             bool truncated = !finished && ticks[i] >= cfg.maxTicks;
+            if (truncated) {
+                reward[2 * i] -= cfg.reward.draw;
+                reward[2 * i + 1] -= cfg.reward.draw;
+            }
             done[i] = finished ? 1 : (truncated ? 2 : 0);
             if (finished || truncated) {
                 float* e = episodeStats + i * kEpisodeStatsSize;

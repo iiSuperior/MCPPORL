@@ -114,7 +114,8 @@ class DuelEnv:
     def set_reward(self, reward: RewardConfig, aim_dense: float = 0.0, reach_dense: float = 0.0) -> None:
         """Change the reward, including the annealed dense training aids."""
         r = np.array([reward.damage_dealt, reward.damage_taken, reward.win, reward.loss, reward.reach_shaping,
-                      reward.gamma, reward.aim_shaping, aim_dense, reach_dense], dtype=np.float32)
+                      reward.gamma, reward.aim_shaping, aim_dense, reach_dense, reward.wasted_attack, reward.draw],
+                     dtype=np.float32)
         lib().mcp_env_set_reward(self._h, _p(r, _F))
 
     def close(self) -> None:

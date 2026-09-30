@@ -3,6 +3,7 @@
     python3 scripts/train.py --out runs/sword --updates 300 --weapons diamond_sword
 """
 import argparse
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -38,6 +39,8 @@ p.add_argument("--shield-panic", default="0,0", help="range of health at which s
 p.add_argument("--head-bias", type=float, default=4.0, help="initial 'no key' logit of heads added to --init")
 p.add_argument("--hotbar-flip", type=float, default=0.0, help="share of duels with the learner's hotbar reversed")
 p.add_argument("--shield-react", default="0,0", help="range of shield users' reaction ticks after a disable")
+p.add_argument("--wasted-attack", type=float, default=0.0, help="penalty per attack that achieves nothing")
+p.add_argument("--draw-penalty", type=float, default=0.0, help="penalty to both players at the time limit")
 p.add_argument("--eval", default="", help="evaluation opponents, comma-separated (default: the standard set)")
 a = p.parse_args()
 split = lambda v: tuple(x for x in v.split(",") if x)
@@ -48,4 +51,5 @@ cfg = PPOConfig(n_duels=a.duels, rollout=a.rollout, updates=a.updates, weapons=t
                 opp_hotbar=split(a.opp_hotbar), opp_offhand=a.opp_offhand, slot_keys=a.slot_keys,
                 use_key=a.use_key, shielder=a.shielder, eval_opponents=split(a.eval),
                 shield_react=tuple(float(x) for x in a.shield_react.split(",")), head_bias=a.head_bias, hotbar_flip=a.hotbar_flip, shield_never=a.shield_never, shield_panic=tuple(float(x) for x in a.shield_panic.split(",")))
+cfg.reward = dataclasses.replace(cfg.reward, wasted_attack=a.wasted_attack, draw=a.draw_penalty)
 train(cfg, Path(a.out), log=lambda s: print(s, flush=True))

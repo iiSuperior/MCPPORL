@@ -74,6 +74,11 @@ class RewardConfig:
     # Potential-based aim shaping: pays for turning the crosshair onto the
     # opponent as the client sees it (1 on target, 0 at 180 degrees off).
     aim_shaping: float = 0.2
+    # Charged per attack that reaches the opponent but does nothing (no damage,
+    # no shield disabled: a hit into a raised shield or the damage cooldown).
+    wasted_attack: float = 0.0
+    # Charged to both players when a fight reaches the time limit.
+    draw: float = 0.0
 
     def __post_init__(self) -> None:
         if not 0.0 < self.gamma <= 1.0:

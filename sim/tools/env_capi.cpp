@@ -38,9 +38,10 @@ void* mcp_env_create(int n, unsigned long long seed, const char* sinTablePath, i
     return new BatchEnv(n, seed, std::move(table), c);
 }
 
-// Change the reward weights (same order as create, then aim_dense, reach_dense).
+// Change the reward weights (same order as create, then aim_dense, reach_dense,
+// wasted_attack, draw).
 void mcp_env_set_reward(void* h, const float* r) {
-    static_cast<BatchEnv*>(h)->cfg.reward = RewardWeights{r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8]};
+    static_cast<BatchEnv*>(h)->cfg.reward = RewardWeights{r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10]};
 }
 
 void mcp_env_destroy(void* h) { delete static_cast<BatchEnv*>(h); }
