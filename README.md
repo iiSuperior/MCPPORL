@@ -58,7 +58,7 @@ Phase 1 in progress. Target version: **26.3** (unobfuscated, Java 25).
   flat-ground golden traces **bit for bit**: standing, walking, sprinting,
   sprint-jumping, jumping, diagonal strafing, sprint-turning, sneaking and
   mid-air turns. `ctest` runs these parity checks offline.
-- The C++ melee port (`sim/include/mcp/duel.hpp`) reproduces all 20
+- The C++ melee port (`sim/include/mcp/duel.hpp`) reproduces all 21
   two-player combat traces **bit for bit**: plain, sprint and critical hits,
   the 180 hit, invulnerability, W-tap, moving, sprinting and airborne victims,
   same-tick trades, partial-strength hits and the post-hit sprint echo
@@ -67,3 +67,8 @@ Phase 1 in progress. Target version: **26.3** (unobfuscated, Java 25).
   4000 vanilla picks matched bit for bit), so the bot can only hit what it
   aims at (`fairness.hpp`: turn-rate cap, one click per tick). Deaths end an
   episode (`Duel::done`, `winner`, `reset`); overlapping players push.
+- Each client sees the opponent the way a vanilla client does
+  (`tracker.hpp`): the server's entity tracker (update cadence, 1/4096 deltas,
+  position syncs) and the client's remote-player interpolation, matched bit
+  for bit against the oracle. Clicks aim at that view, so a moving opponent
+  is hit where it is seen, about a tick late.

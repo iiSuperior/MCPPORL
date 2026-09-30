@@ -100,10 +100,10 @@ What the server copy actually does (verified against the traces):
 - Changes to the server's sprint flag are echoed to the player's own client
   as entity data plus the movement-speed attribute; the client applies both.
 - Overlapping server copies push each other at the end of each shadow tick
-  (`LivingEntity.pushEntities`), which feeds the velocity knockback uses. A
-  real client is also pushed locally by the remote player; neither the oracle
-  nor the simulator models that yet (the simulator counts such ticks,
-  `Duel::clientPushTicks`).
+  (`LivingEntity.pushEntities`), which feeds the velocity knockback uses.
+  Clients are never pushed by the remote player they see: `Entity.push`
+  skips `noPhysics` entities (every `RemotePlayer` is), and on a client
+  `EntitySelector.pushableBy` only admits the local player.
 - A death ends the episode on the killing tick. `ServerPlayer.die` marks the
   connection unloaded, so the dead player's remaining packets that tick
   (attack, sprint, movement) are ignored: in a same-tick trade, the player
@@ -114,6 +114,36 @@ What the server copy actually does (verified against the traces):
   stand-in and counts each draw (`Duel::nonParityEvents`).
 - The oracle disables natural health regeneration: it is driven by hunger,
   which is not in the known domain yet.
+
+#### How a client sees the other player
+
+A client never sees the opponent's true position. It sees a `RemotePlayer`
+that only the tracker's packets and client-side interpolation move
+(`sim/include/mcp/tracker.hpp`, and `RemoteView` in the oracle), and every
+click's pick tests that view's hitbox:
+
+- **Server, `ServerEntity.sendChanges`** (each tick, before entities tick):
+  a player's tracker considers a move packet every 2nd tick (the player
+  type's update interval), or at once when the entity was flagged
+  (`needsSync`: knockback, pushing, a server-side jump) or its synched data
+  changed (health, the sprint flag). It sends a position delta in 1/4096
+  block units (`VecDeltaCodec`, relative to the last position sent) as a
+  one-step stepped path, a rotation-only packet, or nothing. A full-precision
+  `ClientboundEntityPositionSyncPacket` replaces the delta when the server
+  copy's ground state changed, every 400 evaluated ticks, or when the delta is
+  too big.
+- **Client, `SteppedInterpolationHandler`**: each packet queues a step
+  toward the new position, spread over its tick offset (normally 2 ticks);
+  `Entity.commonTick` advances it once per client tick, after the local
+  player's own tick. The interpolation speeds up when steps pile up.
+- **Handshake**: the tracker exists from login, the other client gets
+  `ClientboundAddEntityPacket` after the second server tick and a position
+  sync after the third (the server copy has just landed).
+
+The net effect is that a moving opponent is seen about one tick late and
+quantised to 1/4096: a sprinting player is drawn roughly 0.4 blocks behind
+where they are. A click in that window whiffs (`30_lagged_whiff`), which is
+part of what a human deals with and what the agent now learns to handle.
 
 The simulator mirrors this structure in `sim/include/mcp/duel.hpp`; every
 scenario in `oracle/combat/` must replay bit-identically (`combat_*` tests).
@@ -238,12 +268,10 @@ server plugin:
 All caps are configuration values (`FairnessCaps` in `trainer/mcporl/config.py`
 and `fairness.hpp`).
 
-Known gap: a client sees a remote player where its interpolation puts it,
-a few ticks behind the server. Until remote-player interpolation is ported,
-the pick uses the opponent's latest server position, which is slightly more
-generous than what a human sees. The oracle does the same (it has no client
-level), so parity holds; the gap is against real clients, and is tracked with
-client-side pushing, which needs the same interpolation.
+Aim is resolved against what the client sees: the opponent's interpolated
+remote-player view, not its server position (see "How a client sees the
+other player"). Nothing gives the bot a fresher opponent position than a
+human client would have.
 
 ### Contract vs runtime settings
 
