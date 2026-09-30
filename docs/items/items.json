@@ -1156,6 +1156,148 @@
     "value": "4.0F",
     "note": "1.0 (Attributes.ATTACK_DAMAGE player default) + 3.0F modifier"
    }
+  },
+  "minecraft:bow": {
+   "components": {
+    "minecraft:durability": "384",
+    "minecraft:use_duration": "72000",
+    "minecraft:enchantable": "1"
+   },
+   "behavior": {
+    "max_draw_ticks": "20",
+    "power_curve": "pow = timeHeld / 20.0F; pow = (pow*pow + pow*2.0F) / 3.0F; clamp 1.0F [BowItem.getPowerForTime]",
+    "fire_threshold": "pow < 0.1F -> no shot [BowItem.releaseUsing]",
+    "arrow_velocity": "pow * 3.0F",
+    "uncertainty": "1.0F",
+    "crit": "pow == 1.0F (timeHeld >= 20) [BowItem.releaseUsing]",
+    "durability_per_shot": "1"
+   }
+  },
+  "minecraft:crossbow": {
+   "components": {
+    "minecraft:durability": "465",
+    "minecraft:charged_projectiles": "empty",
+    "minecraft:enchantable": "1"
+   },
+   "behavior": {
+    "charge_ticks": "floor(modifyCrossbowChargingTime(1.25F) * 20.0F) = 25 base; Quick Charge N: 1.25F - 0.25F*N [CrossbowItem.getChargeDuration]",
+    "arrow_power": "3.15F",
+    "firework_power": "1.6F",
+    "uncertainty": "1.0F",
+    "multishot_spread_deg": "10.0",
+    "durability_per_arrow": "1",
+    "durability_per_firework": "3"
+   }
+  },
+  "minecraft:arrow": {
+   "components": {
+    "minecraft:stacks_to": "64"
+   },
+   "behavior": {
+    "base_damage": "2.0 [AbstractArrow baseDamage]",
+    "damage": "ceil(clamp(impactSpeed * arrowDamage, 0.0, 2.147483647E9)) [AbstractArrow.onHitEntity]",
+    "gravity": "0.05",
+    "air_drag": "0.99F",
+    "water_drag": "0.6F",
+    "despawn_ticks_in_ground": "1200",
+    "default_knockback": "0.4F along horizontal motion [LivingEntity.dealDefaultKnockback]"
+   }
+  },
+  "minecraft:fishing_rod": {
+   "components": {
+    "minecraft:durability": "64",
+    "minecraft:enchantable": "1"
+   },
+   "behavior": {
+    "hook_gravity": "0.03F [FishingHook]",
+    "throw_velocity": "0.6/dist per axis + triangle(0.5, 0.0103365) per axis, hook entity random [FishingHook.<init>]",
+    "reel_pull": "victim velocity += (owner - hook) * 0.1 [FishingHook.pullEntity]",
+    "hook_damage_to_entity": "0.0F (no damage on hook) [FishingHook.onHitEntity]",
+    "retrieve_durability": "5 hooked entity, 3 hooked ItemEntity, 1 catch, 2 on ground (override) [FishingHook.retrieve]"
+   }
+  },
+  "minecraft:ender_pearl": {
+   "components": {
+    "minecraft:stacks_to": "16",
+    "minecraft:use_cooldown": "1.0F (= 20 ticks) [UseCooldown.ticks]"
+   },
+   "behavior": {
+    "throw_power": "1.5F",
+    "uncertainty": "1.0F",
+    "gravity": "0.03",
+    "air_drag": "0.99F",
+    "water_drag": "0.8F",
+    "teleport_destination": "pearl oldPosition() (start-of-tick) [ThrownEnderpearl.onHit]",
+    "teleport_damage": "5.0F via enderPearl() source [ThrownEnderpearl.onHit]",
+    "endermite_chance": "0.05F [ThrownEnderpearl.onHit]"
+   }
+  },
+  "minecraft:splash_potion": {
+   "components": {
+    "minecraft:stacks_to": "1",
+    "minecraft:potion_contents": "empty"
+   },
+   "behavior": {
+    "throw_power": "0.5F",
+    "uncertainty": "1.0F",
+    "y_offset": "-20.0F",
+    "splash_range": "4.0",
+    "falloff": "scale = 1.0 - sqrt(dist) / 4.0 [ThrownSplashPotion.onHitAsPotion]",
+    "duration_gate": "scaled duration <= 20 ticks -> effect skipped [ThrownSplashPotion.onHitAsPotion]",
+    "harming": "(int)(scale * (6 << amp) + 0.5) [HealOrHarmMobEffect]"
+   }
+  },
+  "minecraft:lingering_potion": {
+   "components": {
+    "minecraft:stacks_to": "1",
+    "minecraft:potion_contents": "empty",
+    "minecraft:potion_duration_scale": "0.25F"
+   },
+   "behavior": {
+    "throw_power": "0.5F",
+    "uncertainty": "1.0F",
+    "y_offset": "-20.0F",
+    "cloud_radius": "3.0F",
+    "cloud_duration": "600",
+    "cloud_wait": "10",
+    "radius_per_tick": "-0.005F",
+    "application_cadence": "every 5 ticks",
+    "reapplication_delay": "20"
+   }
+  },
+  "minecraft:cobweb": {
+   "components": {
+    "minecraft:block_item": "true"
+   },
+   "behavior": {
+    "stuck_multiplier": "Vec3(0.25, 0.05F, 0.25); with WEAVING: Vec3(0.5, 0.25, 0.5) [WebBlock.entityInside]",
+    "application": "delta *= multiplier in Entity.move (next tick), deltaMovement zeroed [Entity.move]",
+    "randomness": "none"
+   }
+  },
+  "minecraft:water_bucket": {
+   "components": {
+    "minecraft:stacks_to": "1",
+    "minecraft:craft_remainder": "minecraft:bucket"
+   },
+   "behavior": {
+    "flow_tick_delay": "5 [WaterFluid.getTickDelay]",
+    "pickup": "source blocks only (LEVEL == 0) [LiquidBlock.pickupBlock]",
+    "swim_drag": "0.8F [LivingEntity.travelFlying]"
+   }
+  },
+  "minecraft:lava_bucket": {
+   "components": {
+    "minecraft:stacks_to": "1",
+    "minecraft:craft_remainder": "minecraft:bucket"
+   },
+   "behavior": {
+    "flow_tick_delay": "30 overworld, 10 nether (FAST_LAVA) [LavaFluid.getTickDelay]",
+    "lava_damage": "4.0F per tick [Entity.lavaHurt]",
+    "lava_ignite": "15.0F seconds [Entity.lavaIgnite]",
+    "onfire_damage": "1.0F per second [Entity.baseTick]",
+    "swim_drag": "0.5 [LivingEntity.travelFlying]"
+   }
   }
  }
 }
