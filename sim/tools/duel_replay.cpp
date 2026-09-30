@@ -21,11 +21,12 @@ namespace {
 struct Start {
     double x = 0.5, z = 0.5;
     float yaw = 0.0F;
+    float health = 20.0F;
 };
 
 struct Scenario {
     std::string name;
-    Start a{0.5, 0.5, 0.0F}, b{0.5, 3.0, 180.0F};
+    Start a{0.5, 0.5, 0.0F, 20.0F}, b{0.5, 3.0, 180.0F, 20.0F};
     std::vector<DuelInput> ta, tb;
 };
 
@@ -95,6 +96,7 @@ Scenario parseScenario(const std::string& path) {
                 if (k == "x") st.x = std::strtod(v.c_str(), nullptr);
                 else if (k == "z") st.z = std::strtod(v.c_str(), nullptr);
                 else if (k == "yaw") st.yaw = std::strtof(v.c_str(), nullptr);
+                else if (k == "health") st.health = std::strtof(v.c_str(), nullptr);
                 else fail(where, "unknown start key " + k);
             }
             if (tok[1] == "a") s.a = st;
@@ -183,8 +185,8 @@ int main(int argc, char** argv) {
     double y = static_cast<double>(world.surfaceY);
 
     Duel duel;
-    duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world);
-    duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world);
+    duel.spawn(0, s.a.x, y, s.a.z, s.a.yaw, world, s.a.health);
+    duel.spawn(1, s.b.x, y, s.b.z, s.b.yaw, world, s.b.health);
 
     std::FILE* out = std::fopen(argv[3], "w");
     if (!out) return 2;
@@ -216,6 +218,7 @@ int main(int argc, char** argv) {
         std::fprintf(out, ", \"p1\": ");
         writeState(out, duel.p[1]);
         std::fprintf(out, "}}\n");
+        if (duel.done()) break;  // the episode ends on the killing tick, as in the oracle
         duel.deliver();
     }
     std::fclose(out);

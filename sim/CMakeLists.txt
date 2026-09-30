@@ -54,6 +54,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_fairness PRIVATE mcp_sim)
   add_test(NAME fairness COMMAND test_fairness)
 
+  add_executable(test_episode tests/test_episode.cpp)
+  target_link_libraries(test_episode PRIVATE mcp_sim)
+  add_test(NAME episode COMMAND test_episode ${CMAKE_CURRENT_SOURCE_DIR}/data/sin_table.bin)
+
   add_executable(test_lpvec3 tests/test_lpvec3.cpp)
   target_link_libraries(test_lpvec3 PRIVATE mcp_sim)
   add_test(NAME lpvec3 COMMAND test_lpvec3 ${CMAKE_CURRENT_SOURCE_DIR}/data/lpvec3_golden.txt)

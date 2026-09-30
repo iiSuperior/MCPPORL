@@ -151,6 +151,14 @@ public final class CombatOracle {
                 deliver(a);
                 deliver(b);
             }
+            // Vanilla finds nearby entities (pushing, picks) through the level's
+            // entity sections, which only answer once the arena chunks are fully
+            // ticking. Earlier runs raced this and silently lost player pushing.
+            for (Side side : List.of(a, b)) {
+                if (!level.getEntities((Entity) null, side.server.getBoundingBox()).contains(side.server)) {
+                    throw new IllegalStateException("entity lookup does not see " + side.name + "; arena chunks are not ticking");
+                }
+            }
             for (Side side : List.of(a, b)) {
                 side.teleports = 0;
                 side.xLast = side.client.getX();
@@ -649,7 +657,26 @@ public final class CombatOracle {
         return String.format("%08x", Float.floatToRawIntBits(f));
     }
 
+    /** Force-load the arena chunks and tick the server until their entity sections are live. */
+    void settleArena() throws Exception {
+        for (int dx = -8; dx <= 8; dx++) for (int dz = -8; dz <= 8; dz++) {
+            level.setChunkForced(dx, dz, true);
+            level.getChunk(dx, dz);
+        }
+        for (int i = 0; i < 40; i++) tickServer.invoke(server, (BooleanSupplier) () -> false);
+    }
+
     static void runAll(MinecraftServer server, Path dir, Path outDir, List<String> failures) throws IOException {
+        java.util.concurrent.CompletableFuture<Void> settled = new java.util.concurrent.CompletableFuture<>();
+        server.execute(() -> {
+            try {
+                new CombatOracle(server).settleArena();
+                settled.complete(null);
+            } catch (Throwable t) {
+                settled.completeExceptionally(t);
+            }
+        });
+        settled.join();
         List<Path> files;
         try (var stream = Files.list(dir)) {
             files = stream.filter(p -> p.toString().endsWith(".txt")).sorted().toList();

@@ -11,10 +11,11 @@
 // LivingEntity.hurtServer/actuallyHurt/knockback/dealDefaultKnockback/baseTick,
 // Entity.checkFallDamage, AttackRange.isInRange, ServerEntity.sendChanges.
 //
-// Scope: bare hands, no armor or effects, no shields, no deaths, no fall
+// Scope: bare hands, no armor or effects, no shields, no totems, no fall
 // damage, no sneaking, no player-player pushing, full-cube flat arenas, no
 // health regeneration (the oracle disables it). Leaving that scope sets
-// `unsupported` instead of silently diverging.
+// `unsupported` instead of silently diverging. A death ends the episode: the
+// killing tick is simulated in full, nothing after it.
 #pragma once
 
 #include <cstdint>
@@ -22,6 +23,7 @@
 #include "mcp/lpvec3.hpp"
 #include "mcp/pick.hpp"
 #include "mcp/player.hpp"
+#include "mcp/rng.hpp"
 
 namespace mcp {
 
@@ -85,6 +87,14 @@ struct ServerCopy {
     int32_t damageCooldownTime = 0;
     int32_t attackStrengthTicker = 0;
     bool syncVelocity = false;
+    // ServerPlayer.die -> markClientUnloadedAfterDeath: hasClientLoaded() turns
+    // false, so the dead player's later packets are ignored and it takes no damage.
+    bool dead = false;
+    // Stand-in for the entity's own RandomSource, used only where vanilla draws
+    // from it in scope (knockback between players on the same spot). Its state
+    // cannot be reproduced, so each draw is a counted non-parity event.
+    SplitMix64 rng{0};
+    int32_t randomKnockbacks = 0;
     double lastGoodX = 0.0, lastGoodY = 0.0, lastGoodZ = 0.0;
     // Entity data and attribute changes not yet echoed to the player's client.
     bool sprintFlagDirty = false, speedAttributeDirty = false;
@@ -378,9 +388,13 @@ MCP_HD void handleMove(ServerCopy& sp, const MovePacket& pk, const World& w, con
 MCP_HD inline void knockback(ServerCopy& victim, double power, double xd, double zd) {
     power *= 1.0 - 0.0;  // KNOCKBACK_RESISTANCE
     if (power <= 0.0) return;
-    if (xd * xd + zd * zd < static_cast<double>(1.0E-5F)) {
-        victim.body.unsupported = true;  // random direction (players on the same spot) not ported
-        return;
+    while (xd * xd + zd * zd < static_cast<double>(1.0E-5F)) {
+        // Vanilla picks a random direction from the victim's RandomSource: same
+        // distribution here, not the same numbers.
+        auto nextDouble = [&victim]() { return static_cast<double>(victim.rng.next() >> 11) * 0x1.0p-53; };
+        xd = (nextDouble() - nextDouble()) * 0.01;
+        zd = (nextDouble() - nextDouble()) * 0.01;
+        victim.randomKnockbacks++;
     }
     Vec3 dv = Vec3{xd, 0.0, zd}.normalize().scale(power);
     const Vec3& m = victim.body.vel;
@@ -413,7 +427,7 @@ MCP_HD inline bool hurt(ServerCopy& victim, const ServerCopy& attacker, float da
         // dealDefaultKnockback: from the damage source's position (the attacker).
         knockback(victim, static_cast<double>(0.4F), attacker.body.x - victim.body.x, attacker.body.z - victim.body.z);
     }
-    if (victim.health <= 0.0F) victim.body.unsupported = true;  // death and totems not ported
+    if (victim.health <= 0.0F) victim.dead = true;  // no totem in scope: ServerPlayer.die
     return true;
 }
 
@@ -464,8 +478,40 @@ MCP_HD inline void handleAttack(ServerCopy& a, ServerCopy& target, ServerReplies
 // The server simulates the copy's movement with no input (it never sees the
 // client's keys as movement), then snaps it back to where the client said it
 // was; only the velocity and ground state carry over.
+// LivingEntity.isPushable for a server copy in a ticking arena chunk:
+// alive, not a spectator, not on a climbable.
+MCP_HD inline bool pushable(const ServerCopy& s) { return s.health > 0.0F; }
+
+// Entity.push(Entity pusher) called on `target` (LivingEntity.doPush).
+MCP_HD inline void push(ServerCopy& target, ServerCopy& pusher) {
+    double xa = pusher.body.x - target.body.x;
+    double za = pusher.body.z - target.body.z;
+    double dd = ::fmax(::fabs(xa), ::fabs(za));  // Mth.absMax
+    if (!(dd >= static_cast<double>(0.01F))) return;
+    dd = ::sqrt(dd);
+    xa /= dd;
+    za /= dd;
+    double pow = 1.0 / dd;
+    if (pow > 1.0) pow = 1.0;
+    xa *= pow;
+    za *= pow;
+    xa *= static_cast<double>(0.05F);
+    za *= static_cast<double>(0.05F);
+    if (pushable(target)) target.body.vel = target.body.vel.add(-xa, 0.0, -za);
+    if (pushable(pusher)) pusher.body.vel = pusher.body.vel.add(xa, 0.0, za);
+}
+
+// LivingEntity.pushEntities on the server: every pushable entity whose box
+// intersects this one (EntitySelector.pushableBy, no teams in scope).
+MCP_HD inline void pushEntities(ServerCopy& self, ServerCopy& other) {
+    if (!pushable(other)) return;
+    AABB a = self.body.boundingBox(), b = other.body.boundingBox();
+    if (!pick::intersects(b, a)) return;
+    push(other, self);  // doPush(entity) -> entity.push(this)
+}
+
 template <typename World>
-MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w) {
+MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w, ServerCopy* other = nullptr) {
     using C = PlayerConstants;
     Player& b = sp.body;
     double firstGoodX = b.x, firstGoodY = b.y, firstGoodZ = b.z;  // resetPosition
@@ -499,6 +545,8 @@ MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w) {
     float verticalFriction = detail::computeModifiedFriction(0.98F, static_cast<float>(C::kAirDragModifier));
     b.vel = Vec3{movement.x * static_cast<double>(friction), movementY * static_cast<double>(verticalFriction),
                  movement.z * static_cast<double>(friction)};
+    // End of aiStep: push the other player, from where travel just moved this copy.
+    if (other != nullptr) pushEntities(sp, *other);
     // Player.tick
     sp.attackStrengthTicker++;
     // absSnapTo(firstGood)
@@ -509,6 +557,13 @@ MCP_HD void serverTickPlayer(ServerCopy& sp, const World& w) {
 
 }  // namespace duel
 
+// Where a player starts an episode (on the arena floor).
+struct DuelStart {
+    double x = 0.5, z = 0.5;
+    float yaw = 0.0F;
+    float health = CombatConstants::kMaxHealth;
+};
+
 // A zero-latency duel, stepped exactly like the oracle harness.
 struct Duel {
     DuelPlayer p[2];
@@ -516,7 +571,8 @@ struct Duel {
 
     // Place both players and run the login handshake (three server ticks).
     template <typename World>
-    MCP_HD void spawn(int32_t i, double x, double y, double z, float yaw, const World& w) {
+    MCP_HD void spawn(int32_t i, double x, double y, double z, float yaw, const World& w,
+                      float health = CombatConstants::kMaxHealth) {
         DuelPlayer& d = p[i];
         d = DuelPlayer{};
         d.client.x = d.client.xo = x;
@@ -535,6 +591,7 @@ struct Duel {
         s.lastGoodX = x;
         s.lastGoodY = y;
         s.lastGoodZ = z;
+        s.health = health;
         for (int32_t k = 0; k < 3; ++k) duel::serverTickPlayer(s, w);
     }
 
@@ -549,11 +606,14 @@ struct Duel {
             DuelPlayer& me = p[i];
             DuelPlayer& other = p[1 - i];
             const ClientPackets& pk = me.packets;
-            if (pk.attack) duel::handleAttack(me.server, other.server, other.replies, sinTab);
+            // Handlers that require hasClientLoaded() skip a player who died earlier
+            // in this step; handlePunch does not check it.
+            bool loaded = !me.server.dead;
+            if (pk.attack && loaded) duel::handleAttack(me.server, other.server, other.replies, sinTab);
             if (pk.punches > 0) me.server.attackStrengthTicker = 0;  // handlePunch -> resetAttackStrengthTicker
-            if (pk.input && pk.inputKeys.shift) me.server.body.unsupported = true;  // server-side sneaking not ported
-            if (pk.sprintCommand != 0) me.server.setSprinting(pk.sprintCommand > 0);
-            if (pk.move) duel::handleMove(me.server, pk.movePacket, w, sinTab);
+            if (pk.input && pk.inputKeys.shift && loaded) me.server.body.unsupported = true;  // server-side sneaking not ported
+            if (pk.sprintCommand != 0 && loaded) me.server.setSprinting(pk.sprintCommand > 0);
+            if (pk.move && loaded) duel::handleMove(me.server, pk.movePacket, w, sinTab);
         }
         // MinecraftServer.tickServer: ServerEntity.sendChanges echoes dirty entity
         // data (and with it dirty attributes) to the player itself...
@@ -581,11 +641,10 @@ struct Duel {
             if (s.damageCooldownTime > 0) s.damageCooldownTime--;
         }
         // ...then each connection's tick (tickPlayer).
-        for (int32_t i = 0; i < 2; ++i) duel::serverTickPlayer(p[i].server, w);
-        // Overlapping players: the server copies do not push each other (the
-        // oracle's server velocities are unaffected), but a real client is
-        // pushed locally by the remote player's interpolated position. Neither
-        // the oracle nor this port models that yet; count it so callers can see.
+        for (int32_t i = 0; i < 2; ++i) duel::serverTickPlayer(p[i].server, w, &p[1 - i].server);
+        // Overlapping players: the server copies push each other (above), but a
+        // real client is also pushed locally by the remote player's interpolated
+        // position. Neither the oracle nor this port models that yet; count it.
         if (overlapping(p[0].client, p[1].client)) clientPushTicks++;
     }
 
@@ -598,6 +657,28 @@ struct Duel {
     MCP_HD void deliver() {
         duel::deliver(p[0]);
         duel::deliver(p[1]);
+    }
+
+    // Start a new episode: both players respawn from scratch (no state carries over).
+    template <typename World>
+    MCP_HD void reset(const DuelStart& a, const DuelStart& b, const World& w, uint64_t seed = 0) {
+        double y = static_cast<double>(w.surfaceY);
+        spawn(0, a.x, y, a.z, a.yaw, w, a.health);
+        spawn(1, b.x, y, b.z, b.yaw, w, b.health);
+        p[0].server.rng = SplitMix64{seed * 2 + 1};
+        p[1].server.rng = SplitMix64{seed * 2 + 2};
+        clientPushTicks = 0;
+    }
+
+    // Draws that cannot match vanilla bit for bit (see ServerCopy::rng).
+    MCP_HD int32_t nonParityEvents() const { return p[0].server.randomKnockbacks + p[1].server.randomKnockbacks; }
+
+    // Episode end: a death (the killing tick is complete once step() returns).
+    MCP_HD bool done() const { return p[0].server.dead || p[1].server.dead; }
+    // 0 or 1 for the surviving player, -1 while nobody (or, impossibly, both) died.
+    MCP_HD int32_t winner() const {
+        if (p[0].server.dead == p[1].server.dead) return -1;
+        return p[0].server.dead ? 1 : 0;
     }
 
     MCP_HD bool unsupported() const {
